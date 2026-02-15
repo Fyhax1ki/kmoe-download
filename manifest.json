@@ -1,0 +1,81 @@
+{
+  "manifest_version": 3,
+  "name": "Kmoe Download",
+  "version": "1.0.0",
+  "description": "Kmoe 漫画下载扩展",
+  "permissions": [
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://kxx.moe/*",
+    "https://kxo.moe/*",
+    "https://mox.moe/*",
+    "https://koz.moe/*",
+    "https://kox.moe/*",
+    "https://kzo.moe/*",
+    "https://kzz.moe/*",
+    "http://kxx.moe/*",
+    "http://kxo.moe/*",
+    "http://mox.moe/*",
+    "http://koz.moe/*",
+    "http://kox.moe/*",
+    "http://kzo.moe/*",
+    "http://kzz.moe/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://kxx.moe/*",
+        "https://kxo.moe/*",
+        "https://mox.moe/*",
+        "https://koz.moe/*",
+        "https://kox.moe/*",
+        "https://kzo.moe/*",
+        "https://kzz.moe/*",
+        "http://kxx.moe/*",
+        "http://kxo.moe/*",
+        "http://mox.moe/*",
+        "http://koz.moe/*",
+        "http://kox.moe/*",
+        "http://kzo.moe/*",
+        "http://kzz.moe/*"
+      ],
+      "js": ["content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icons/Kmoe BatchDL.png",
+      "48": "icons/Kmoe BatchDL.png",
+      "128": "icons/Kmoe BatchDL.png"
+    }
+  },
+  "icons": {
+    "16": "icons/Kmoe BatchDL.png",
+    "48": "icons/Kmoe BatchDL.png",
+    "128": "icons/Kmoe BatchDL.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["scripts/page-bridge.js"],
+      "matches": [
+        "https://kxx.moe/*",
+        "https://kxo.moe/*",
+        "https://mox.moe/*",
+        "https://koz.moe/*",
+        "https://kox.moe/*",
+        "https://kzo.moe/*",
+        "https://kzz.moe/*",
+        "http://kxx.moe/*",
+        "http://kxo.moe/*",
+        "http://mox.moe/*",
+        "http://koz.moe/*",
+        "http://kox.moe/*",
+        "http://kzo.moe/*",
+        "http://kzz.moe/*"
+      ]
+    }
+  ]
+}

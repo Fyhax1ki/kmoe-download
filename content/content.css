@@ -1,0 +1,361 @@
+#kmoe-download-card {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 450px;
+  max-height: 80vh;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 999999;
+  display: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}
+
+.kmoe-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f5f5f5;
+  border-radius: 8px 8px 0 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.kmoe-card-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.kmoe-card-close:hover {
+  color: #333;
+}
+
+.kmoe-card-body {
+  padding: 16px;
+  overflow-y: auto;
+  max-height: calc(80vh - 50px);
+}
+
+.kmoe-book-info {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.kmoe-book-cover {
+  width: 80px;
+  height: 110px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.kmoe-book-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.kmoe-book-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+  word-break: break-word;
+}
+
+.kmoe-book-author {
+  font-size: 13px;
+  color: #666;
+}
+
+.kmoe-format-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eee;
+  font-size: 13px;
+}
+
+.kmoe-format-select label {
+  color: #333;
+}
+
+.kmoe-format-select select {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.kmoe-quota-info {
+  margin-left: auto;
+  font-size: 12px;
+  color: #e74c3c;
+}
+
+.kmoe-chapter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.kmoe-select-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+}
+
+.kmoe-select-all input {
+  cursor: pointer;
+}
+
+.kmoe-chapter-count {
+  font-size: 12px;
+  color: #888;
+}
+
+.kmoe-chapter-list {
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+
+.kmoe-category-group {
+  border-bottom: 1px solid #eee;
+}
+
+.kmoe-category-group:last-child {
+  border-bottom: none;
+}
+
+.kmoe-category-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f9f9f9;
+  font-size: 13px;
+}
+
+.kmoe-category-select-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: #333;
+  font-weight: 500;
+}
+
+.kmoe-category-select-all input {
+  cursor: pointer;
+}
+
+.kmoe-category-count {
+  font-size: 12px;
+  color: #888;
+}
+
+.kmoe-category-items {
+  padding: 0;
+}
+
+.kmoe-chapter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+  border-bottom: 1px solid #f5f5f5;
+  transition: background 0.15s;
+}
+
+.kmoe-chapter-item:last-child {
+  border-bottom: none;
+}
+
+.kmoe-chapter-item:hover {
+  background: #f9f9f9;
+}
+
+.kmoe-chapter-checkbox {
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.kmoe-chapter-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kmoe-chapter-category {
+  color: #888;
+  font-size: 12px;
+}
+
+.kmoe-chapter-size {
+  color: #888;
+  font-size: 12px;
+}
+
+.kmoe-empty {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+}
+
+.kmoe-download-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #666;
+}
+
+.kmoe-download-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.kmoe-download-btn {
+  padding: 8px 24px;
+  background: #4a90d9;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.kmoe-download-btn:hover {
+  background: #3a7bc8;
+}
+
+.kmoe-download-btn-disabled,
+.kmoe-download-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.kmoe-download-btn-disabled:hover,
+.kmoe-download-btn:disabled:hover {
+  background: #ccc;
+}
+
+#kmoe-progress-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 350px;
+  max-height: 400px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 999998;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  display: none;
+  overflow: hidden;
+}
+
+.kmoe-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #4a90d9;
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.kmoe-progress-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #fff;
+  padding: 0;
+  line-height: 1;
+}
+
+.kmoe-progress-close:hover {
+  color: #ddd;
+}
+
+.kmoe-progress-body {
+  padding: 12px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.kmoe-progress-item {
+  margin-bottom: 12px;
+}
+
+.kmoe-progress-item:last-child {
+  margin-bottom: 0;
+}
+
+.kmoe-progress-name {
+  font-size: 12px;
+  color: #333;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kmoe-progress-bar {
+  height: 6px;
+  background: #eee;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.kmoe-progress-fill {
+  height: 100%;
+  background: #4a90d9;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.kmoe-progress-info {
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.kmoe-progress-footer {
+  padding: 10px 16px;
+  background: #f5f5f5;
+  font-size: 12px;
+  color: #666;
+  border-top: 1px solid #eee;
+}
