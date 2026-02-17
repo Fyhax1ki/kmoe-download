@@ -298,6 +298,8 @@
     xhr.responseType = 'blob';
     xhr.setRequestHeader('X-KM-FROM', 'kb_http_down');
     
+    currentXhr = xhr;
+    
     xhr.onprogress = function(e) {
       if (e.lengthComputable && onProgress) {
         onProgress(e.loaded, e.total);
@@ -305,6 +307,8 @@
     };
     
     xhr.onload = function() {
+      currentXhr = null;
+      if (downloadCancelled) return;
       if (xhr.status === 200) {
         if (onComplete) {
           onComplete(xhr.response, filename);
@@ -317,10 +321,17 @@
     };
     
     xhr.onerror = function() {
+      currentXhr = null;
+      if (downloadCancelled) return;
       if (onError) onError('network');
     };
     
+    xhr.onabort = function() {
+      currentXhr = null;
+    };
+    
     xhr.send();
+    return xhr;
   }
 
   function getDownloadUrl(bookId, volId, format, callback) {
@@ -346,6 +357,8 @@
   var downloading = 0;
   var progressPanel = null;
   var downloadDelay = 1500;
+  var downloadCancelled = false;
+  var currentXhr = null;
 
   function createProgressPanel() {
     if (progressPanel) return progressPanel;
@@ -355,7 +368,10 @@
     progressPanel.innerHTML = 
       '<div class="kmoe-progress-header">' +
         '<span>下载进度</span>' +
-        '<button class="kmoe-progress-close">&times;</button>' +
+        '<div class="kmoe-progress-actions">' +
+          '<button class="kmoe-progress-cancel" id="kmoe-cancel-download">取消</button>' +
+          '<button class="kmoe-progress-close">&times;</button>' +
+        '</div>' +
       '</div>' +
       '<div class="kmoe-progress-body" id="kmoe-progress-body"></div>' +
       '<div class="kmoe-progress-footer">' +
@@ -367,7 +383,34 @@
       progressPanel.style.display = 'none';
     });
 
+    progressPanel.querySelector('#kmoe-cancel-download').addEventListener('click', function() {
+      cancelDownload();
+    });
+
     return progressPanel;
+  }
+
+  function cancelDownload() {
+    downloadCancelled = true;
+    
+    if (currentXhr) {
+      currentXhr.abort();
+      currentXhr = null;
+    }
+
+    downloadQueue.forEach(function(item) {
+      if (item.status === 0 || item.status === 1) {
+        item.status = 4;
+      }
+    });
+
+    downloading = 0;
+    updateProgressPanel();
+
+    var statsEl = document.getElementById('kmoe-progress-stats');
+    if (statsEl) {
+      statsEl.textContent = '已取消';
+    }
   }
 
   function updateProgressPanel() {
@@ -419,6 +462,7 @@
   }
 
   function downloadRefresh() {
+    if (downloadCancelled) return;
     updateProgressPanel();
     if (downloading < maxDownload) {
       for (var i = 0; i < downloadQueue.length; i++) {
@@ -494,6 +538,10 @@
       alert('请至少选择一个章节');
       return;
     }
+
+    downloadCancelled = false;
+    downloadQueue = [];
+    downloading = 0;
 
     var card = document.getElementById('kmoe-download-card');
     var formatSelect = card.querySelector('#kmoe-format');
