@@ -5,7 +5,8 @@
   "description": "Kmoe 漫画下载扩展",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
     "https://kxx.moe/*",
@@ -51,7 +52,8 @@
       "16": "icons/Kmoe BatchDL.png",
       "48": "icons/Kmoe BatchDL.png",
       "128": "icons/Kmoe BatchDL.png"
-    }
+    },
+    "default_popup": "popup/popup.html"
   },
   "icons": {
     "16": "icons/Kmoe BatchDL.png",
@@ -60,7 +62,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["scripts/page-bridge.js"],
+      "resources": ["scripts/page-bridge.js", "history/history.html", "history/history.js"],
       "matches": [
         "https://kxx.moe/*",
         "https://kxo.moe/*",

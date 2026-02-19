@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kmoe Download</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <h1>Kmoe Download</h1>
+    
+    <div class="section">
+      <div class="setting-item">
+        <label for="maxDownload">并发下载数</label>
+        <input type="number" id="maxDownload" min="1" max="3" value="1">
+      </div>
+      
+      <div class="setting-item">
+        <label for="downloadDelay">下载间隔 (ms)</label>
+        <input type="number" id="downloadDelay" min="1500" max="10000" step="500" value="1500">
+      </div>
+      
+      <div class="setting-item">
+        <label for="maxRetry">最大重试次数</label>
+        <input type="number" id="maxRetry" min="1" max="10" value="5">
+      </div>
+    </div>
+    
+    <div class="section">
+      <button id="openHistory" class="btn-secondary">查看下载历史 (<span id="historyCount">0</span>)</button>
+    </div>
+    
+    <div class="footer">
+      <button id="saveBtn" class="btn-primary">保存设置</button>
+      <span id="saveStatus"></span>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

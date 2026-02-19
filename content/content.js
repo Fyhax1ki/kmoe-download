@@ -24,40 +24,71 @@
   });
 
   function loadDownloadRecords(callback) {
-    chrome.storage.local.get(['kmoe_download_records'], function(result) {
-      downloadRecords = result.kmoe_download_records || {};
+    chrome.storage.local.get(['kmoe_download_records_v2'], function(result) {
+      downloadRecords = result.kmoe_download_records_v2 || {};
       cleanExpiredRecords();
       if (callback) callback();
     });
   }
 
   function saveDownloadRecords() {
-    chrome.storage.local.set({ kmoe_download_records: downloadRecords });
+    chrome.storage.local.set({ kmoe_download_records_v2: downloadRecords });
   }
 
   function cleanExpiredRecords() {
     var now = Date.now();
     var expireTime = RECORD_EXPIRE_HOURS * 60 * 60 * 1000;
-    Object.keys(downloadRecords).forEach(function(key) {
-      if (now - downloadRecords[key] > expireTime) {
-        delete downloadRecords[key];
+    
+    Object.keys(downloadRecords).forEach(function(bookId) {
+      var book = downloadRecords[bookId];
+      if (book.volumes) {
+        Object.keys(book.volumes).forEach(function(volId) {
+          var vol = book.volumes[volId];
+          if (vol.formats) {
+            Object.keys(vol.formats).forEach(function(format) {
+              if (now - vol.formats[format] > expireTime) {
+                delete vol.formats[format];
+              }
+            });
+            if (Object.keys(vol.formats).length === 0) {
+              delete book.volumes[volId];
+            }
+          }
+        });
+        if (Object.keys(book.volumes).length === 0) {
+          delete downloadRecords[bookId];
+        }
       }
     });
     saveDownloadRecords();
   }
 
-  function addDownloadRecord(bookId, volId, format) {
-    var key = bookId + '_' + volId + '_' + format;
-    downloadRecords[key] = Date.now();
+  function addDownloadRecord(bookId, volId, format, volName) {
+    if (!downloadRecords[bookId]) {
+      downloadRecords[bookId] = {
+        title: cachedBookInfo ? cachedBookInfo.title : '',
+        cover: cachedBookInfo ? cachedBookInfo.cover : '',
+        url: window.location.href,
+        volumes: {}
+      };
+    }
+    if (!downloadRecords[bookId].volumes[volId]) {
+      downloadRecords[bookId].volumes[volId] = {
+        name: volName || '',
+        formats: {}
+      };
+    }
+    downloadRecords[bookId].volumes[volId].formats[format] = Date.now();
     saveDownloadRecords();
   }
 
   function isDownloaded(bookId, volId, format) {
-    var key = bookId + '_' + volId + '_' + format;
-    if (!downloadRecords[key]) return false;
+    if (!downloadRecords[bookId] || !downloadRecords[bookId].volumes[volId]) return false;
+    var vol = downloadRecords[bookId].volumes[volId];
+    if (!vol.formats || !vol.formats[format]) return false;
     var now = Date.now();
     var expireTime = RECORD_EXPIRE_HOURS * 60 * 60 * 1000;
-    return (now - downloadRecords[key]) <= expireTime;
+    return (now - vol.formats[format]) <= expireTime;
   }
 
   function createDownloadButton() {
@@ -277,8 +308,12 @@
       var index = parseInt(cb.dataset.index);
       var item = bookInfo.arr[index];
       if (item) {
-        var size = format === '1' ? item.mobiSize : item.epubSize;
-        if (size) totalSize += size;
+        var volId = item.id;
+        var downloaded = isDownloaded(bookInfo.bookId, volId, format);
+        if (!downloaded) {
+          var size = format === '1' ? item.mobiSize : item.epubSize;
+          if (size) totalSize += size;
+        }
       }
     });
 
@@ -398,8 +433,18 @@
   var downloading = 0;
   var progressPanel = null;
   var downloadDelay = 1500;
+  var maxRetry = 5;
   var downloadCancelled = false;
   var currentXhr = null;
+
+  function loadSettings() {
+    chrome.storage.local.get(['kmoe_settings'], function(result) {
+      var settings = result.kmoe_settings || {};
+      maxDownload = settings.maxDownload || 1;
+      downloadDelay = settings.downloadDelay || 1500;
+      maxRetry = settings.maxRetry || 5;
+    });
+  }
 
   function createProgressPanel() {
     if (progressPanel) return progressPanel;
@@ -543,14 +588,14 @@
         updateProgressPanel();
       }, function(blob, filename) {
         kbSaveAs(blob, filename);
-        addDownloadRecord(item.bookId, item.volId, item.format);
+        addDownloadRecord(item.bookId, item.volId, item.format, item.volName);
         item.status = 2;
         downloading--;
         setTimeout(downloadRefresh, downloadDelay);
       }, function(err) {
         if (err === 429) {
           item.retryCount = item.retryCount || 0;
-          if (item.retryCount < 5) {
+          if (item.retryCount < maxRetry) {
             item.retryCount++;
             item.status = 0;
             setTimeout(function() {
@@ -561,7 +606,7 @@
           }
         } else {
           item.retryCount = item.retryCount || 0;
-          if (item.retryCount < 3) {
+          if (item.retryCount < maxRetry) {
             item.retryCount++;
             item.status = 0;
           } else {
@@ -602,6 +647,7 @@
       downloadQueue.push({
         bookId: bookInfo.bookId,
         volId: chapterData.id,
+        volName: chapterName,
         format: format,
         filename: filename,
         downloadOrigin: downloadOrigin,
@@ -663,6 +709,7 @@
 
   injectPageBridge();
   loadDownloadRecords();
+  loadSettings();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', observeDOM);
