@@ -8,6 +8,11 @@ document.addEventListener('DOMContentLoaded', function() {
   loadHistory();
 
   document.getElementById('clearHistory').addEventListener('click', clearHistory);
+  document.getElementById('exportHistory').addEventListener('click', exportHistory);
+  document.getElementById('importHistory').addEventListener('click', function() {
+    document.getElementById('importFile').click();
+  });
+  document.getElementById('importFile').addEventListener('change', importHistory);
 
   document.querySelectorAll('.tab').forEach(function(tab) {
     tab.addEventListener('click', function() {
@@ -164,4 +169,92 @@ function clearHistory() {
     updateCounts();
     renderBookList();
   });
+}
+
+function exportHistory() {
+  chrome.storage.local.get(['kmoe_download_records_v2'], function(result) {
+    var data = result.kmoe_download_records_v2 || {};
+    var json = JSON.stringify(data, null, 2);
+    var blob = new Blob([json], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'kmoe-download-history-' + formatDate(new Date()) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+function importHistory(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+
+  var reader = new FileReader();
+  reader.onload = function(event) {
+    try {
+      var data = JSON.parse(event.target.result);
+      if (typeof data !== 'object') {
+        alert('无效的文件格式');
+        return;
+      }
+
+      chrome.storage.local.get(['kmoe_download_records_v2'], function(result) {
+        var existing = result.kmoe_download_records_v2 || {};
+        var merged = mergeHistory(existing, data);
+
+        chrome.storage.local.set({ kmoe_download_records_v2: merged }, function() {
+          historyData = merged;
+          updateCounts();
+          renderBookList();
+          alert('导入成功');
+        });
+      });
+    } catch (err) {
+      alert('文件解析失败: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+function mergeHistory(existing, imported) {
+  var merged = JSON.parse(JSON.stringify(existing));
+
+  Object.keys(imported).forEach(function(bookId) {
+    var book = imported[bookId];
+    if (!merged[bookId]) {
+      merged[bookId] = book;
+    } else {
+      if (book.volumes) {
+        if (!merged[bookId].volumes) {
+          merged[bookId].volumes = {};
+        }
+        Object.keys(book.volumes).forEach(function(volId) {
+          var vol = book.volumes[volId];
+          if (!merged[bookId].volumes[volId]) {
+            merged[bookId].volumes[volId] = vol;
+          } else if (vol.formats) {
+            if (!merged[bookId].volumes[volId].formats) {
+              merged[bookId].volumes[volId].formats = {};
+            }
+            Object.keys(vol.formats).forEach(function(format) {
+              if (!merged[bookId].volumes[volId].formats[format] ||
+                  vol.formats[format] > merged[bookId].volumes[volId].formats[format]) {
+                merged[bookId].volumes[volId].formats[format] = vol.formats[format];
+              }
+            });
+          }
+        });
+      }
+    }
+  });
+
+  return merged;
+}
+
+function formatDate(date) {
+  var year = date.getFullYear();
+  var month = String(date.getMonth() + 1).padStart(2, '0');
+  var day = String(date.getDate()).padStart(2, '0');
+  return year + '-' + month + '-' + day;
 }

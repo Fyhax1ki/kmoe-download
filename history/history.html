@@ -41,6 +41,11 @@
       font-weight: 600;
     }
 
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
     .header button {
       padding: 6px 14px;
       background: rgba(255, 255, 255, 0.2);
@@ -229,7 +234,12 @@
   <div class="container">
     <div class="header">
       <h1>下载历史</h1>
-      <button id="clearHistory">清空记录</button>
+      <div class="header-actions">
+        <button id="exportHistory">导出</button>
+        <button id="importHistory">导入</button>
+        <button id="clearHistory">清空</button>
+      </div>
+      <input type="file" id="importFile" accept=".json" style="display:none">
     </div>
     
     <div class="tabs">
