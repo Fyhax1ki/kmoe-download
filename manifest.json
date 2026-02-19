@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "description": "Kmoe 漫画下载扩展",
   "permissions": [
-    "activeTab"
+    "activeTab",
+    "storage"
   ],
   "host_permissions": [
     "https://kxx.moe/*",

@@ -2,8 +2,10 @@
   'use strict';
 
   const SOURCE = 'kmoe-download-page-bridge';
+  const RECORD_EXPIRE_HOURS = 48;
   let cardVisible = false;
   let cachedBookInfo = null;
+  var downloadRecords = {};
 
   function injectPageBridge() {
     const script = document.createElement('script');
@@ -20,6 +22,43 @@
       cachedBookInfo = event.data.payload;
     }
   });
+
+  function loadDownloadRecords(callback) {
+    chrome.storage.local.get(['kmoe_download_records'], function(result) {
+      downloadRecords = result.kmoe_download_records || {};
+      cleanExpiredRecords();
+      if (callback) callback();
+    });
+  }
+
+  function saveDownloadRecords() {
+    chrome.storage.local.set({ kmoe_download_records: downloadRecords });
+  }
+
+  function cleanExpiredRecords() {
+    var now = Date.now();
+    var expireTime = RECORD_EXPIRE_HOURS * 60 * 60 * 1000;
+    Object.keys(downloadRecords).forEach(function(key) {
+      if (now - downloadRecords[key] > expireTime) {
+        delete downloadRecords[key];
+      }
+    });
+    saveDownloadRecords();
+  }
+
+  function addDownloadRecord(bookId, volId, format) {
+    var key = bookId + '_' + volId + '_' + format;
+    downloadRecords[key] = Date.now();
+    saveDownloadRecords();
+  }
+
+  function isDownloaded(bookId, volId, format) {
+    var key = bookId + '_' + volId + '_' + format;
+    if (!downloadRecords[key]) return false;
+    var now = Date.now();
+    var expireTime = RECORD_EXPIRE_HOURS * 60 * 60 * 1000;
+    return (now - downloadRecords[key]) <= expireTime;
+  }
 
   function createDownloadButton() {
     var mobiBtn = document.getElementById('bt_down_all_1_mobi');
@@ -66,7 +105,7 @@
     return groups;
   }
 
-  function renderChapterList(arr, format) {
+  function renderChapterList(arr, format, bookId) {
     if (!arr || arr.length === 0) {
       return '<div class="kmoe-empty">暂无章节</div>';
     }
@@ -92,9 +131,11 @@
         const name = item.name || '第' + (index + 1) + '章';
         const size = format === '1' ? item.mobiSize : item.epubSize;
         const sizeText = size ? ' <span class="kmoe-chapter-size">(' + size + 'MB)</span>' : '';
-        html += '<label class="kmoe-chapter-item">';
+        const downloaded = isDownloaded(bookId, item.id, format);
+        const downloadedMark = downloaded ? ' <span class="kmoe-downloaded-mark">✓</span>' : '';
+        html += '<label class="kmoe-chapter-item' + (downloaded ? ' kmoe-already-downloaded' : '') + '">';
         html += '<input type="checkbox" class="kmoe-chapter-checkbox" data-index="' + index + '" data-category="' + category + '" checked>';
-        html += '<span class="kmoe-chapter-name">' + name + sizeText + '</span>';
+        html += '<span class="kmoe-chapter-name">' + name + sizeText + downloadedMark + '</span>';
         html += '</label>';
       });
 
@@ -144,7 +185,7 @@
           '<span class="kmoe-chapter-count">已选 <span id="kmoe-selected-count">' + bookInfo.arr.length + '</span> / ' + bookInfo.arr.length + ' 章</span>' +
         '</div>' +
         '<div class="kmoe-chapter-list" id="kmoe-chapter-list">' +
-          renderChapterList(bookInfo.arr, '1') +
+          renderChapterList(bookInfo.arr, '1', bookInfo.bookId) +
         '</div>' +
         '<div class="kmoe-download-info">' +
           '<span>选中大小: <span id="kmoe-selected-size">0</span>MB</span>' +
@@ -183,7 +224,7 @@
     card.querySelector('#kmoe-format').addEventListener('change', function() {
       var format = this.value;
       var listEl = card.querySelector('#kmoe-chapter-list');
-      listEl.innerHTML = renderChapterList(bookInfo.arr, format);
+      listEl.innerHTML = renderChapterList(bookInfo.arr, format, bookInfo.bookId);
       updateSelectionInfo(bookInfo);
     });
 
@@ -502,6 +543,7 @@
         updateProgressPanel();
       }, function(blob, filename) {
         kbSaveAs(blob, filename);
+        addDownloadRecord(item.bookId, item.volId, item.format);
         item.status = 2;
         downloading--;
         setTimeout(downloadRefresh, downloadDelay);
@@ -620,6 +662,7 @@
   }
 
   injectPageBridge();
+  loadDownloadRecords();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', observeDOM);
@@ -627,3 +670,4 @@
     observeDOM();
   }
 })();
+

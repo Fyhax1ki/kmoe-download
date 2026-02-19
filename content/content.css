@@ -222,6 +222,20 @@
   font-size: 12px;
 }
 
+.kmoe-downloaded-mark {
+  color: #52c41a;
+  font-weight: bold;
+  margin-left: 4px;
+}
+
+.kmoe-already-downloaded {
+  opacity: 0.7;
+}
+
+.kmoe-already-downloaded .kmoe-chapter-name {
+  color: #888;
+}
+
 .kmoe-empty {
   padding: 20px;
   text-align: center;
