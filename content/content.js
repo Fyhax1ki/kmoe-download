@@ -576,6 +576,8 @@
         }
       }
 
+      addDownloadRecord(item.bookId, item.volId, item.format, item.volName);
+
       var startTime = Date.now();
       var lastLoaded = 0;
 
@@ -588,7 +590,6 @@
         updateProgressPanel();
       }, function(blob, filename) {
         kbSaveAs(blob, filename);
-        addDownloadRecord(item.bookId, item.volId, item.format, item.volName);
         item.status = 2;
         downloading--;
         setTimeout(downloadRefresh, downloadDelay);
