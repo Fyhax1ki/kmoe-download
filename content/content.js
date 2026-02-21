@@ -78,8 +78,15 @@
         formats: {}
       };
     }
-    downloadRecords[bookId].volumes[volId].formats[format] = Date.now();
-    saveDownloadRecords();
+    
+    var existingTime = downloadRecords[bookId].volumes[volId].formats[format];
+    var now = Date.now();
+    var expireTime = RECORD_EXPIRE_HOURS * 60 * 60 * 1000;
+    
+    if (!existingTime || (now - existingTime) > expireTime) {
+      downloadRecords[bookId].volumes[volId].formats[format] = now;
+      saveDownloadRecords();
+    }
   }
 
   function isDownloaded(bookId, volId, format) {
