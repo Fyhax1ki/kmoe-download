@@ -325,7 +325,7 @@
     var downloadBtn = card.querySelector('#kmoe-start-download');
     if (downloadBtn) {
       var quotaAvailable = bookInfo.quotaAvailable;
-      if (quotaAvailable !== null && totalSize > quotaAvailable) {
+      if (quotaAvailable !== null && totalSize > quotaAvailable + 0.5) {
         downloadBtn.disabled = true;
         downloadBtn.classList.add('kmoe-download-btn-disabled');
         downloadBtn.textContent = '额度不足';
