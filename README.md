@@ -1,82 +1,115 @@
 # Kmoe Download
 
-Kmoe 漫画下载 Chrome 扩展，支持批量下载漫画章节。
+一个基于 Chrome 扩展的章节批量下载工具，支持下载队列控制与历史记录管理。
 
-## 功能特性
+Kmoe Download 是一个用于结构化章节下载的浏览器扩展项目，重点实现下载任务调度、并发控制与历史记录管理。
+
+本项目主要用于浏览器扩展开发与下载流程控制实践。
+
+---
+
+## ✨ 功能特性
 
 - 批量选择章节下载
-- 支持 MOBI 和 EPUB 格式
-- 按分类分组显示章节
-- 显示文件大小和下载进度
-- 额度检查，超出额度时禁用下载
-- 自动重试失败的下载
+- 任务队列调度机制
+- 可配置并发数量控制
+- 自动重试失败任务
+- 下载记录持久化
+- 独立历史记录页面管理
+- 页面数据桥接
 
-## 安装
+---
 
-1. 下载或克隆本项目
-2. 打开 Chrome 浏览器，访问 `chrome://extensions/`
-3. 开启右上角「开发者模式」
-4. 点击「加载已解压的扩展程序」
-5. 选择本项目目录
+## 📦 安装方式
 
-## 使用方法
+### 开发者模式加载
 
-1. 访问 Kmoe 网站的漫画详情页
-2. 点击页面上的「Kmoe-Download」按钮
-3. 选择文件格式（MOBI/EPUB）
-4. 勾选需要下载的章节
-5. 点击「开始下载」
+1. 克隆仓库：
 
-## 支持的网站
+   ```bash
+   git clone https://github.com/Fyhax1ki/kmoe-download.git
+   ```
 
-- kxx.moe
-- kxo.moe
-- mox.moe
-- koz.moe
-- kox.moe
-- kzo.moe
-- kzz.moe
+2. 打开 Chrome 浏览器，进入：
 
-## 项目结构
+   ```
+   chrome://extensions/
+   ```
+
+3. 开启右上角「开发者模式」  
+4. 点击「加载已解压的扩展程序」  
+5. 选择项目根目录
+
+---
+
+## 🚀 使用方法
+
+1. 打开支持的漫画详情页面  
+2. 打开扩展弹窗  
+3. 选择章节与下载参数  
+4. 启动下载任务  
+5. 在历史页面查看记录
+
+所有下载任务均通过内部队列调度执行，避免瞬时请求过载。
+
+---
+
+## 🏗 项目结构
 
 ```
 kmoe-download/
+├── manifest.json
 ├── content/
-│   ├── content.js      # 主要逻辑代码
-│   └── content.css     # 样式文件
+│   ├── content.js
+│   └── content.css
+├── popup/
+│   ├── popup.html
+│   ├── popup.js
+│   └── popup.css
+├── history/
+│   ├── history.html
+│   └── history.js
 ├── scripts/
-│   └── page-bridge.js  # 页面数据桥接脚本
-├── icons/
-│   └── Kmoe BatchDL.png
-└── manifest.json       # 扩展配置文件
+│   └── page-bridge.js
+└── icons/
 ```
 
-## 技术说明
+---
 
-### 数据获取
+## 🧠 下载调度机制
 
-扩展通过注入 `page-bridge.js` 脚本到页面上下文中，获取 `window.arr_voldata` 等变量，然后通过 `window.postMessage` 传递给 content script。
+- 基于任务队列顺序执行
+- 支持并发数量控制
+- 失败任务有限重试
+- 下载状态记录与同步
 
-### 下载流程
+---
 
-1. 调用 `/getdownurl.php` API 获取下载链接
-2. 使用 XMLHttpRequest 下载文件（避免 CORS 问题）
-3. 下载完成后通过 Blob URL 触发浏览器保存
+## 🔒 设计原则
 
-### 章节数据结构
+- 不绕过站点权限验证
+- 不进行后台自动抓取
+- 不暴露内部接口细节
+- 下载行为仅在用户主动触发时执行
+- 尽量减少对来源服务器的压力
 
-```javascript
-{
-  id: string,       // 章节 ID
-  category: string, // 分类名称
-  name: string,     // 章节名称
-  mobiSize: number, // MOBI 文件大小 (MB)
-  epubSize: number  // EPUB 文件大小 (MB)
-}
-```
+---
 
-## 注意事项
+## 🛠 开发说明
 
-- 下载速度受服务器限制，建议不要选择过多章节
-- 429 错误会自动重试，最多 5 次
-- 非会员用户不支持真正的批量下载，扩展会逐个下载
+本项目为原生 Chrome Extension 结构，无需额外构建工具。
+
+修改建议：
+
+- 下载逻辑：`content/content.js`
+- UI 交互：`popup/`
+- 历史记录：`history/`
+- 页面桥接：`scripts/page-bridge.js`
+- 权限配置：`manifest.json`
+
+---
+
+## 📌 免责声明
+
+本项目仅用于学习与技术研究用途。  
+使用者需自行遵守相关网站的服务条款与法律规定。
