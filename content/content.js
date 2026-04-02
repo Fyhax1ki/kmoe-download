@@ -1,4 +1,4 @@
-(function() {
+(function () {
   'use strict';
 
   const SOURCE = 'kmoe-download-page-bridge';
@@ -10,13 +10,13 @@
   function injectPageBridge() {
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('scripts/page-bridge.js');
-    script.onload = function() {
+    script.onload = function () {
       this.remove();
     };
     (document.head || document.documentElement).appendChild(script);
   }
 
-  window.addEventListener('message', function(event) {
+  window.addEventListener('message', function (event) {
     if (event.source !== window) return;
     if (event.data && event.data.source === SOURCE && event.data.type === 'MANGA_DATA') {
       cachedBookInfo = event.data.payload;
@@ -24,7 +24,7 @@
   });
 
   function loadDownloadRecords(callback) {
-    chrome.storage.local.get(['kmoe_download_records_v2'], function(result) {
+    chrome.storage.local.get(['kmoe_download_records_v2'], function (result) {
       downloadRecords = result.kmoe_download_records_v2 || {};
       cleanExpiredRecords();
       if (callback) callback();
@@ -38,14 +38,14 @@
   function cleanExpiredRecords() {
     var now = Date.now();
     var expireTime = RECORD_EXPIRE_HOURS * 60 * 60 * 1000;
-    
-    Object.keys(downloadRecords).forEach(function(bookId) {
+
+    Object.keys(downloadRecords).forEach(function (bookId) {
       var book = downloadRecords[bookId];
       if (book.volumes) {
-        Object.keys(book.volumes).forEach(function(volId) {
+        Object.keys(book.volumes).forEach(function (volId) {
           var vol = book.volumes[volId];
           if (vol.formats) {
-            Object.keys(vol.formats).forEach(function(format) {
+            Object.keys(vol.formats).forEach(function (format) {
               if (now - vol.formats[format] > expireTime) {
                 delete vol.formats[format];
               }
@@ -78,11 +78,11 @@
         formats: {}
       };
     }
-    
+
     var existingTime = downloadRecords[bookId].volumes[volId].formats[format];
     var now = Date.now();
     var expireTime = RECORD_EXPIRE_HOURS * 60 * 60 * 1000;
-    
+
     if (!existingTime || (now - existingTime) > expireTime) {
       downloadRecords[bookId].volumes[volId].formats[format] = now;
       saveDownloadRecords();
@@ -108,7 +108,7 @@
       mobiDownloadBtn.textContent = 'Kmoe-Download';
       mobiDownloadBtn.className = 'bt_sml_defa kmoe-download-btn';
       mobiDownloadBtn.style.cssText = 'width:120px;margin-right:4px;';
-      mobiDownloadBtn.addEventListener('click', function(e) {
+      mobiDownloadBtn.addEventListener('click', function (e) {
         e.preventDefault();
         toggleCard();
       });
@@ -121,7 +121,7 @@
       epubDownloadBtn.textContent = 'Kmoe-Download';
       epubDownloadBtn.className = 'bt_sml_defa kmoe-download-btn';
       epubDownloadBtn.style.cssText = 'width:120px;margin-right:4px;';
-      epubDownloadBtn.addEventListener('click', function(e) {
+      epubDownloadBtn.addEventListener('click', function (e) {
         e.preventDefault();
         toggleCard();
       });
@@ -133,7 +133,7 @@
 
   function groupByCategory(arr) {
     const groups = {};
-    arr.forEach(function(item, index) {
+    arr.forEach(function (item, index) {
       const category = item.category || '其他';
       if (!groups[category]) {
         groups[category] = [];
@@ -151,7 +151,7 @@
     const groups = groupByCategory(arr);
     let html = '';
 
-    Object.keys(groups).forEach(function(category) {
+    Object.keys(groups).forEach(function (category) {
       const items = groups[category];
       html += '<div class="kmoe-category-group">';
       html += '<div class="kmoe-category-header">';
@@ -163,7 +163,7 @@
       html += '</div>';
       html += '<div class="kmoe-category-items">';
 
-      items.forEach(function(entry) {
+      items.forEach(function (entry) {
         const item = entry.item;
         const index = entry.index;
         const name = item.name || '第' + (index + 1) + '章';
@@ -194,62 +194,62 @@
     const quotaText = bookInfo.quotaAvailable !== null ? '可用额度: ' + bookInfo.quotaAvailable + 'MB' : '';
     const card = document.createElement('div');
     card.id = 'kmoe-download-card';
-    card.innerHTML = 
+    card.innerHTML =
       '<div class="kmoe-card-header">' +
-        '<span>Kmoe Download</span>' +
-        '<button class="kmoe-card-close">&times;</button>' +
+      '<span>Kmoe Download</span>' +
+      '<button class="kmoe-card-close">&times;</button>' +
       '</div>' +
       '<div class="kmoe-card-body">' +
-        '<div class="kmoe-book-info">' +
-          '<img class="kmoe-book-cover" src="' + bookInfo.cover + '" alt="cover">' +
-          '<div class="kmoe-book-meta">' +
-            '<div class="kmoe-book-title">' + bookInfo.title + '</div>' +
-            '<div class="kmoe-book-author">' + (bookInfo.author.join(', ') || '未知作者') + '</div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="kmoe-format-select">' +
-          '<label>文件格式：</label>' +
-          '<select id="kmoe-format">' +
-            '<option value="1">MOBI</option>' +
-            '<option value="2">EPUB</option>' +
-          '</select>' +
-          (quotaText ? '<span class="kmoe-quota-info">' + quotaText + '</span>' : '') +
-        '</div>' +
-        '<div class="kmoe-chapter-header">' +
-          '<label class="kmoe-select-all">' +
-            '<input type="checkbox" id="kmoe-select-all" checked>' +
-            '<span>全选</span>' +
-          '</label>' +
-          '<span class="kmoe-chapter-count">已选 <span id="kmoe-selected-count">' + bookInfo.arr.length + '</span> / ' + bookInfo.arr.length + ' 章</span>' +
-        '</div>' +
-        '<div class="kmoe-chapter-list" id="kmoe-chapter-list">' +
-          renderChapterList(bookInfo.arr, '1', bookInfo.bookId) +
-        '</div>' +
-        '<div class="kmoe-download-info">' +
-          '<span>选中大小: <span id="kmoe-selected-size">0</span>MB</span>' +
-        '</div>' +
-        '<div class="kmoe-download-actions">' +
-          '<button class="kmoe-download-btn" id="kmoe-start-download">开始下载</button>' +
-        '</div>' +
+      '<div class="kmoe-book-info">' +
+      '<img class="kmoe-book-cover" src="' + bookInfo.cover + '" alt="cover">' +
+      '<div class="kmoe-book-meta">' +
+      '<div class="kmoe-book-title">' + bookInfo.title + '</div>' +
+      '<div class="kmoe-book-author">' + (bookInfo.author.join(', ') || '未知作者') + '</div>' +
+      '</div>' +
+      '</div>' +
+      '<div class="kmoe-format-select">' +
+      '<label>文件格式：</label>' +
+      '<select id="kmoe-format">' +
+      '<option value="1">MOBI</option>' +
+      '<option value="2">EPUB</option>' +
+      '</select>' +
+      (quotaText ? '<span class="kmoe-quota-info">' + quotaText + '</span>' : '') +
+      '</div>' +
+      '<div class="kmoe-chapter-header">' +
+      '<label class="kmoe-select-all">' +
+      '<input type="checkbox" id="kmoe-select-all" checked>' +
+      '<span>全选</span>' +
+      '</label>' +
+      '<span class="kmoe-chapter-count">已选 <span id="kmoe-selected-count">' + bookInfo.arr.length + '</span> / ' + bookInfo.arr.length + ' 章</span>' +
+      '</div>' +
+      '<div class="kmoe-chapter-list" id="kmoe-chapter-list">' +
+      renderChapterList(bookInfo.arr, '1', bookInfo.bookId) +
+      '</div>' +
+      '<div class="kmoe-download-info">' +
+      '<span>选中大小: <span id="kmoe-selected-size">0</span>MB</span>' +
+      '</div>' +
+      '<div class="kmoe-download-actions">' +
+      '<button class="kmoe-download-btn" id="kmoe-start-download">开始下载</button>' +
+      '</div>' +
       '</div>';
     document.body.appendChild(card);
 
     card.querySelector('.kmoe-card-close').addEventListener('click', hideCard);
 
     var selectAllCheckbox = card.querySelector('#kmoe-select-all');
-    selectAllCheckbox.addEventListener('change', function() {
+    selectAllCheckbox.addEventListener('change', function () {
       var checkboxes = card.querySelectorAll('.kmoe-chapter-checkbox');
       var categoryCheckboxes = card.querySelectorAll('.kmoe-category-checkbox');
-      checkboxes.forEach(function(cb) { cb.checked = selectAllCheckbox.checked; });
-      categoryCheckboxes.forEach(function(cb) { cb.checked = selectAllCheckbox.checked; });
+      checkboxes.forEach(function (cb) { cb.checked = selectAllCheckbox.checked; });
+      categoryCheckboxes.forEach(function (cb) { cb.checked = selectAllCheckbox.checked; });
       updateSelectionInfo(bookInfo);
     });
 
-    card.querySelector('.kmoe-chapter-list').addEventListener('change', function(e) {
+    card.querySelector('.kmoe-chapter-list').addEventListener('change', function (e) {
       if (e.target.classList.contains('kmoe-category-checkbox')) {
         var category = e.target.dataset.category;
         var checkboxes = card.querySelectorAll('.kmoe-chapter-checkbox[data-category="' + category + '"]');
-        checkboxes.forEach(function(cb) { cb.checked = e.target.checked; });
+        checkboxes.forEach(function (cb) { cb.checked = e.target.checked; });
         updateSelectionInfo(bookInfo);
         updateGlobalSelectAll();
       } else if (e.target.classList.contains('kmoe-chapter-checkbox')) {
@@ -259,14 +259,14 @@
       }
     });
 
-    card.querySelector('#kmoe-format').addEventListener('change', function() {
+    card.querySelector('#kmoe-format').addEventListener('change', function () {
       var format = this.value;
       var listEl = card.querySelector('#kmoe-chapter-list');
       listEl.innerHTML = renderChapterList(bookInfo.arr, format, bookInfo.bookId);
       updateSelectionInfo(bookInfo);
     });
 
-    card.querySelector('#kmoe-start-download').addEventListener('click', function() {
+    card.querySelector('#kmoe-start-download').addEventListener('click', function () {
       startDownload(bookInfo);
     });
 
@@ -279,7 +279,7 @@
     var card = document.getElementById('kmoe-download-card');
     if (!card) return;
     var checkboxes = card.querySelectorAll('.kmoe-chapter-checkbox');
-    var allChecked = Array.from(checkboxes).every(function(cb) { return cb.checked; });
+    var allChecked = Array.from(checkboxes).every(function (cb) { return cb.checked; });
     var selectAllCheckbox = card.querySelector('#kmoe-select-all');
     if (selectAllCheckbox) {
       selectAllCheckbox.checked = allChecked;
@@ -290,7 +290,7 @@
     var card = document.getElementById('kmoe-download-card');
     if (!card) return;
     var checkboxes = card.querySelectorAll('.kmoe-chapter-checkbox[data-category="' + category + '"]');
-    var allChecked = Array.from(checkboxes).every(function(cb) { return cb.checked; });
+    var allChecked = Array.from(checkboxes).every(function (cb) { return cb.checked; });
     var categoryCheckbox = card.querySelector('.kmoe-category-checkbox[data-category="' + category + '"]');
     if (categoryCheckbox) {
       categoryCheckbox.checked = allChecked;
@@ -311,7 +311,7 @@
     }
 
     var totalSize = 0;
-    checkboxes.forEach(function(cb) {
+    checkboxes.forEach(function (cb) {
       var index = parseInt(cb.dataset.index);
       var item = bookInfo.arr[index];
       if (item) {
@@ -350,7 +350,7 @@
     var card = document.getElementById('kmoe-download-card');
     if (!card) return [];
     var checkboxes = card.querySelectorAll('.kmoe-chapter-checkbox:checked');
-    return Array.from(checkboxes).map(function(cb) {
+    return Array.from(checkboxes).map(function (cb) {
       return {
         index: parseInt(cb.dataset.index)
       };
@@ -370,7 +370,7 @@
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(function() {
+    setTimeout(function () {
       URL.revokeObjectURL(url);
     }, 1000);
   }
@@ -380,16 +380,16 @@
     xhr.open('GET', url, true);
     xhr.responseType = 'blob';
     xhr.setRequestHeader('X-KM-FROM', 'kb_http_down');
-    
+
     currentXhr = xhr;
-    
-    xhr.onprogress = function(e) {
+
+    xhr.onprogress = function (e) {
       if (e.lengthComputable && onProgress) {
         onProgress(e.loaded, e.total);
       }
     };
-    
-    xhr.onload = function() {
+
+    xhr.onload = function () {
       currentXhr = null;
       if (downloadCancelled) return;
       if (xhr.status === 200) {
@@ -402,17 +402,17 @@
         if (onError) onError(xhr.status);
       }
     };
-    
-    xhr.onerror = function() {
+
+    xhr.onerror = function () {
       currentXhr = null;
       if (downloadCancelled) return;
       if (onError) onError('network');
     };
-    
-    xhr.onabort = function() {
+
+    xhr.onabort = function () {
       currentXhr = null;
     };
-    
+
     xhr.send();
     return xhr;
   }
@@ -421,7 +421,7 @@
     var s_url = '/getdownurl.php?b=' + bookId + '&v=' + volId + '&mobi=' + format + '&vip=0&json=1';
     var xhr = new XMLHttpRequest();
     xhr.open('GET', s_url);
-    xhr.onload = function() {
+    xhr.onload = function () {
       try {
         var rsp = JSON.parse(xhr.responseText);
         callback(rsp);
@@ -429,7 +429,7 @@
         callback(null);
       }
     };
-    xhr.onerror = function() {
+    xhr.onerror = function () {
       callback(null);
     };
     xhr.send();
@@ -445,7 +445,7 @@
   var currentXhr = null;
 
   function loadSettings() {
-    chrome.storage.local.get(['kmoe_settings'], function(result) {
+    chrome.storage.local.get(['kmoe_settings'], function (result) {
       var settings = result.kmoe_settings || {};
       maxDownload = settings.maxDownload || 1;
       downloadDelay = settings.downloadDelay || 1500;
@@ -455,28 +455,28 @@
 
   function createProgressPanel() {
     if (progressPanel) return progressPanel;
-    
+
     progressPanel = document.createElement('div');
     progressPanel.id = 'kmoe-progress-panel';
-    progressPanel.innerHTML = 
+    progressPanel.innerHTML =
       '<div class="kmoe-progress-header">' +
-        '<span>下载进度</span>' +
-        '<div class="kmoe-progress-actions">' +
-          '<button class="kmoe-progress-cancel" id="kmoe-cancel-download">取消</button>' +
-          '<button class="kmoe-progress-close">&times;</button>' +
-        '</div>' +
+      '<span>下载进度</span>' +
+      '<div class="kmoe-progress-actions">' +
+      '<button class="kmoe-progress-cancel" id="kmoe-cancel-download">取消</button>' +
+      '<button class="kmoe-progress-close">&times;</button>' +
+      '</div>' +
       '</div>' +
       '<div class="kmoe-progress-body" id="kmoe-progress-body"></div>' +
       '<div class="kmoe-progress-footer">' +
-        '<span id="kmoe-progress-stats">等待: 0 | 完成: 0 | 失败: 0</span>' +
+      '<span id="kmoe-progress-stats">等待: 0 | 完成: 0 | 失败: 0</span>' +
       '</div>';
     document.body.appendChild(progressPanel);
 
-    progressPanel.querySelector('.kmoe-progress-close').addEventListener('click', function() {
+    progressPanel.querySelector('.kmoe-progress-close').addEventListener('click', function () {
       progressPanel.style.display = 'none';
     });
 
-    progressPanel.querySelector('#kmoe-cancel-download').addEventListener('click', function() {
+    progressPanel.querySelector('#kmoe-cancel-download').addEventListener('click', function () {
       cancelDownload();
     });
 
@@ -485,13 +485,13 @@
 
   function cancelDownload() {
     downloadCancelled = true;
-    
+
     if (currentXhr) {
       currentXhr.abort();
       currentXhr = null;
     }
 
-    downloadQueue.forEach(function(item) {
+    downloadQueue.forEach(function (item) {
       if (item.status === 0 || item.status === 1) {
         item.status = 4;
       }
@@ -514,7 +514,7 @@
     var numFail = 0;
     var numDownloading = 0;
 
-    downloadQueue.forEach(function(item) {
+    downloadQueue.forEach(function (item) {
       if (item.status === 0) numQueued++;
       else if (item.status === 1) numDownloading++;
       else if (item.status === 2) numSuccess++;
@@ -529,17 +529,17 @@
     var bodyEl = document.getElementById('kmoe-progress-body');
     if (bodyEl) {
       var html = '';
-      downloadQueue.forEach(function(item, index) {
+      downloadQueue.forEach(function (item, index) {
         if (item.status === 1) {
           var percent = item.progress || 0;
           var speed = item.speed ? formatSpeed(item.speed) : '';
           html += '<div class="kmoe-progress-item">' +
             '<div class="kmoe-progress-name">' + item.filename + '</div>' +
             '<div class="kmoe-progress-bar">' +
-              '<div class="kmoe-progress-fill" style="width:' + percent + '%"></div>' +
+            '<div class="kmoe-progress-fill" style="width:' + percent + '%"></div>' +
             '</div>' +
             '<div class="kmoe-progress-info">' + percent + '% ' + speed + '</div>' +
-          '</div>';
+            '</div>';
         }
       });
       bodyEl.innerHTML = html;
@@ -570,7 +570,7 @@
   }
 
   function startDownloadItem(item, index) {
-    getDownloadUrl(item.bookId, item.volId, item.format, function(rsp) {
+    getDownloadUrl(item.bookId, item.volId, item.format, function (rsp) {
       var url;
       if (rsp && rsp.url) {
         url = rsp.url;
@@ -588,25 +588,25 @@
       var startTime = Date.now();
       var lastLoaded = 0;
 
-      kbHttpDown(url, item.filename, function(loaded, total) {
+      kbHttpDown(url, item.filename, function (loaded, total) {
         var now = Date.now();
         var timeDiff = (now - startTime) / 1000;
         item.progress = total > 0 ? Math.round((loaded / total) * 100) : 0;
         item.speed = timeDiff > 0 ? (loaded - lastLoaded) / timeDiff : 0;
         lastLoaded = loaded;
         updateProgressPanel();
-      }, function(blob, filename) {
+      }, function (blob, filename) {
         kbSaveAs(blob, filename);
         item.status = 2;
         downloading--;
         setTimeout(downloadRefresh, downloadDelay);
-      }, function(err) {
+      }, function (err) {
         if (err === 429) {
           item.retryCount = item.retryCount || 0;
           if (item.retryCount < maxRetry) {
             item.retryCount++;
             item.status = 0;
-            setTimeout(function() {
+            setTimeout(function () {
               downloadRefresh();
             }, 5000 * item.retryCount);
           } else {
@@ -647,7 +647,7 @@
     var downPrefix = bookInfo.downPrefix || '';
     var downSuffix = bookInfo.downSuffix || '/0/';
 
-    selected.forEach(function(chapter) {
+    selected.forEach(function (chapter) {
       var chapterData = bookInfo.arr[chapter.index];
       var chapterName = chapterData.name || '第' + (chapter.index + 1) + '章';
       var filename = sanitizeFilename(chapterName) + '.' + formatExt;
@@ -705,7 +705,7 @@
   function observeDOM() {
     createDownloadButton();
 
-    var observer = new MutationObserver(function(mutations, obs) {
+    var observer = new MutationObserver(function (mutations, obs) {
       createDownloadButton();
     });
 
@@ -718,7 +718,17 @@
   injectPageBridge();
   loadDownloadRecords();
   loadSettings();
+  chrome.storage.onChanged.addListener(function (changes, areaName) {
+    if (areaName === 'local' && changes.kmoe_settings) {
+      var settings = changes.kmoe_settings.newValue || {};
 
+      maxDownload = settings.maxDownload || 1;
+      downloadDelay = settings.downloadDelay || 1500;
+      maxRetry = settings.maxRetry || 5;
+
+      console.log('Kmoe 设置已热更新:', settings);
+    }
+  });
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', observeDOM);
   } else {
