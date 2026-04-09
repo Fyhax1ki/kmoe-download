@@ -587,14 +587,15 @@
         }
       }
 
-      var startTime = Date.now();
+      var lastProgressTime = Date.now();
       var lastLoaded = 0;
 
       kbHttpDown(url, item.filename, function (loaded, total) {
         var now = Date.now();
-        var timeDiff = (now - startTime) / 1000;
+        var timeDiff = (now - lastProgressTime) / 1000;
         item.progress = total > 0 ? Math.round((loaded / total) * 100) : 0;
         item.speed = timeDiff > 0 ? (loaded - lastLoaded) / timeDiff : 0;
+        lastProgressTime = now;
         lastLoaded = loaded;
         updateProgressPanel();
       }, function (blob, filename) {
