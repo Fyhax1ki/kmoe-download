@@ -381,7 +381,7 @@
     xhr.responseType = 'blob';
     xhr.setRequestHeader('X-KM-FROM', 'kb_http_down');
 
-    currentXhr = xhr;
+    activeXhrs.add(xhr);
 
     xhr.onprogress = function (e) {
       if (e.lengthComputable && onProgress) {
@@ -390,7 +390,7 @@
     };
 
     xhr.onload = function () {
-      currentXhr = null;
+      activeXhrs.delete(xhr);
       if (downloadCancelled) return;
       if (xhr.status === 200) {
         if (onComplete) {
@@ -404,13 +404,13 @@
     };
 
     xhr.onerror = function () {
-      currentXhr = null;
+      activeXhrs.delete(xhr);
       if (downloadCancelled) return;
       if (onError) onError('network');
     };
 
     xhr.onabort = function () {
-      currentXhr = null;
+      activeXhrs.delete(xhr);
     };
 
     xhr.send();
@@ -442,7 +442,7 @@
   var downloadDelay = 1500;
   var maxRetry = 5;
   var downloadCancelled = false;
-  var currentXhr = null;
+  var activeXhrs = new Set();
 
   function loadSettings() {
     chrome.storage.local.get(['kmoe_settings'], function (result) {
@@ -486,10 +486,10 @@
   function cancelDownload() {
     downloadCancelled = true;
 
-    if (currentXhr) {
-      currentXhr.abort();
-      currentXhr = null;
-    }
+    activeXhrs.forEach(function (xhr) {
+      xhr.abort();
+    });
+    activeXhrs.clear();
 
     downloadQueue.forEach(function (item) {
       if (item.status === 0 || item.status === 1) {
@@ -571,6 +571,10 @@
 
   function startDownloadItem(item, index) {
     getDownloadUrl(item.bookId, item.volId, item.format, function (rsp) {
+      if (downloadCancelled || item.status === 4) {
+        return;
+      }
+
       var url;
       if (rsp && rsp.url) {
         url = rsp.url;
@@ -582,8 +586,6 @@
           url = item.downloadOrigin + '/dl/' + item.bookId + '/' + item.volId + '/' + item.format + '/0/';
         }
       }
-
-      addDownloadRecord(item.bookId, item.volId, item.format, item.volName);
 
       var startTime = Date.now();
       var lastLoaded = 0;
@@ -597,6 +599,7 @@
         updateProgressPanel();
       }, function (blob, filename) {
         kbSaveAs(blob, filename);
+        addDownloadRecord(item.bookId, item.volId, item.format, item.volName);
         item.status = 2;
         downloading--;
         setTimeout(downloadRefresh, downloadDelay);
@@ -637,6 +640,7 @@
     downloadCancelled = false;
     downloadQueue = [];
     downloading = 0;
+    activeXhrs.clear();
 
     var card = document.getElementById('kmoe-download-card');
     var formatSelect = card.querySelector('#kmoe-format');
