@@ -51,14 +51,8 @@ function loadHistoryCount() {
     var count = 0;
     Object.keys(records).forEach(function(bookId) {
       var book = records[bookId];
-      if (book.volumes) {
-        Object.keys(book.volumes).forEach(function(volId) {
-          var vol = book.volumes[volId];
-          if (vol.formats) {
-            count += Object.keys(vol.formats).length;
-          }
-        });
-      }
+      if (!book || !book.volumes || Object.keys(book.volumes).length === 0) return;
+      count ++;
     });
     document.getElementById('historyCount').textContent = count;
   });
