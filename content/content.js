@@ -3,6 +3,9 @@
 
   const SOURCE = 'kmoe-download-page-bridge';
   const RECORD_EXPIRE_HOURS = 48;
+  const DOWNLOAD_URL_TIMEOUT_MS = 30000;
+  const DOWNLOAD_REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
+  const DOWNLOAD_STALL_TIMEOUT_MS = 90000;
   let cardVisible = false;
   let cachedBookInfo = null;
   var downloadRecords = {};
@@ -377,19 +380,53 @@
 
   function kbHttpDown(url, filename, onProgress, onComplete, onError) {
     var xhr = new XMLHttpRequest();
+    var finished = false;
+    var stallTimer = null;
+
+    function clearStallTimer() {
+      if (stallTimer) {
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      }
+    }
+
+    function fail(reason) {
+      if (finished) return;
+      finished = true;
+      clearStallTimer();
+      activeXhrs.delete(xhr);
+      if (downloadCancelled) return;
+      if (onError) onError(reason);
+    }
+
+    function armStallTimer() {
+      clearStallTimer();
+      stallTimer = setTimeout(function () {
+        if (finished) return;
+        xhr.abort();
+        fail('timeout');
+      }, DOWNLOAD_STALL_TIMEOUT_MS);
+    }
+
     xhr.open('GET', url, true);
     xhr.responseType = 'blob';
+    xhr.timeout = DOWNLOAD_REQUEST_TIMEOUT_MS;
     xhr.setRequestHeader('X-KM-FROM', 'kb_http_down');
 
     activeXhrs.add(xhr);
+    armStallTimer();
 
     xhr.onprogress = function (e) {
+      armStallTimer();
       if (e.lengthComputable && onProgress) {
         onProgress(e.loaded, e.total);
       }
     };
 
     xhr.onload = function () {
+      if (finished) return;
+      finished = true;
+      clearStallTimer();
       activeXhrs.delete(xhr);
       if (downloadCancelled) return;
       if (xhr.status === 200) {
@@ -404,12 +441,15 @@
     };
 
     xhr.onerror = function () {
-      activeXhrs.delete(xhr);
-      if (downloadCancelled) return;
-      if (onError) onError('network');
+      fail('network');
+    };
+
+    xhr.ontimeout = function () {
+      fail('timeout');
     };
 
     xhr.onabort = function () {
+      clearStallTimer();
       activeXhrs.delete(xhr);
     };
 
@@ -421,6 +461,7 @@
     var s_url = '/getdownurl.php?b=' + bookId + '&v=' + volId + '&mobi=' + format + '&vip=0&json=1';
     var xhr = new XMLHttpRequest();
     xhr.open('GET', s_url);
+    xhr.timeout = DOWNLOAD_URL_TIMEOUT_MS;
     xhr.onload = function () {
       try {
         var rsp = JSON.parse(xhr.responseText);
@@ -430,6 +471,9 @@
       }
     };
     xhr.onerror = function () {
+      callback(null);
+    };
+    xhr.ontimeout = function () {
       callback(null);
     };
     xhr.send();
