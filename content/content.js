@@ -238,6 +238,7 @@
     document.body.appendChild(card);
 
     card.querySelector('.kmoe-card-close').addEventListener('click', hideCard);
+    makePanelDraggable(card, card);
 
     var selectAllCheckbox = card.querySelector('#kmoe-select-all');
     selectAllCheckbox.addEventListener('change', function () {
@@ -364,6 +365,70 @@
     return name.replace(/[<>:"/\\|?*]/g, '_').trim();
   }
 
+  function makePanelDraggable(panel, handle) {
+    if (!panel || !handle || panel.dataset.kmoeDraggable === '1') return;
+    panel.dataset.kmoeDraggable = '1';
+
+    var dragging = false;
+    var offsetX = 0;
+    var offsetY = 0;
+    var activePointerId = null;
+
+    function getPoint(event) {
+      return event;
+    }
+
+    function moveTo(clientX, clientY) {
+      panel.style.left = (clientX - offsetX) + 'px';
+      panel.style.top = (clientY - offsetY) + 'px';
+      panel.style.right = 'auto';
+      panel.style.bottom = 'auto';
+      panel.style.transform = 'none';
+    }
+
+    function startDrag(event) {
+      if (event.button !== undefined && event.button !== 0) return;
+      if (event.target && event.target.closest('button, input, select, textarea, a, label, .kmoe-chapter-list')) return;
+
+      var point = getPoint(event);
+      var rect = panel.getBoundingClientRect();
+      dragging = true;
+      activePointerId = event.pointerId;
+      offsetX = point.clientX - rect.left;
+      offsetY = point.clientY - rect.top;
+      moveTo(point.clientX, point.clientY);
+      if (handle.setPointerCapture && activePointerId !== null) {
+        handle.setPointerCapture(activePointerId);
+      }
+      event.preventDefault();
+    }
+
+    function onDrag(event) {
+      if (!dragging) return;
+      if (activePointerId !== null && event.pointerId !== activePointerId) return;
+      var point = getPoint(event);
+      moveTo(point.clientX, point.clientY);
+      event.preventDefault();
+    }
+
+    function stopDrag(event) {
+      if (!dragging) return;
+      if (activePointerId !== null && event && event.pointerId !== activePointerId) return;
+      if (handle.releasePointerCapture && activePointerId !== null) {
+        try {
+          handle.releasePointerCapture(activePointerId);
+        } catch (e) {}
+      }
+      dragging = false;
+      activePointerId = null;
+    }
+
+    handle.addEventListener('pointerdown', startDrag);
+    handle.addEventListener('pointermove', onDrag);
+    handle.addEventListener('pointerup', stopDrag);
+    handle.addEventListener('pointercancel', stopDrag);
+  }
+
   function kbSaveAs(blob, filename) {
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -485,8 +550,11 @@
   var progressPanel = null;
   var downloadDelay = 1500;
   var maxRetry = 5;
+  var downloadMode = 'browser';
   var downloadCancelled = false;
   var activeXhrs = new Set();
+  var activeBrowserDownloads = {};
+  var nextDownloadItemId = 1;
 
   function loadSettings() {
     chrome.storage.local.get(['kmoe_settings'], function (result) {
@@ -494,6 +562,8 @@
       maxDownload = settings.maxDownload || 1;
       downloadDelay = settings.downloadDelay || 1500;
       maxRetry = settings.maxRetry || 5;
+      downloadMode = settings.downloadMode || 'browser';
+      if (downloadMode !== 'browser' && downloadMode !== 'xhr') downloadMode = 'browser';
     });
   }
 
@@ -519,6 +589,7 @@
     progressPanel.querySelector('.kmoe-progress-close').addEventListener('click', function () {
       progressPanel.style.display = 'none';
     });
+    makePanelDraggable(progressPanel, progressPanel.querySelector('.kmoe-progress-header'));
 
     progressPanel.querySelector('#kmoe-cancel-download').addEventListener('click', function () {
       cancelDownload();
@@ -534,6 +605,19 @@
       xhr.abort();
     });
     activeXhrs.clear();
+
+    if (downloadMode === 'browser') {
+      chrome.runtime.sendMessage({
+        type: 'KMOE_DOWNLOAD_CANCEL'
+      });
+    }
+    Object.keys(activeBrowserDownloads).forEach(function (downloadId) {
+      chrome.runtime.sendMessage({
+        type: 'KMOE_DOWNLOAD_CANCEL',
+        downloadId: parseInt(downloadId, 10)
+      });
+    });
+    activeBrowserDownloads = {};
 
     downloadQueue.forEach(function (item) {
       if (item.status === 0 || item.status === 1) {
@@ -574,16 +658,21 @@
     if (bodyEl) {
       var html = '';
       downloadQueue.forEach(function (item, index) {
-        if (item.status === 1) {
+        if (item.status === 1 || (item.downloadMode === 'browser' && (item.status === 0 || item.status === 3))) {
           var percent = item.progress || 0;
           var speed = item.speed ? formatSpeed(item.speed) : '';
+          var info = item.statusText || (item.status === 0 ? '等待浏览器下载' : (percent + '% ' + speed));
           html += '<div class="kmoe-progress-item">' +
-            '<div class="kmoe-progress-name">' + item.filename + '</div>' +
-            '<div class="kmoe-progress-bar">' +
-            '<div class="kmoe-progress-fill" style="width:' + percent + '%"></div>' +
-            '</div>' +
-            '<div class="kmoe-progress-info">' + percent + '% ' + speed + '</div>' +
-            '</div>';
+            '<div class="kmoe-progress-name">' + item.filename + '</div>';
+          if (item.downloadMode === 'browser') {
+            html += '<div class="kmoe-progress-info">' + info + '</div>';
+          } else {
+            html += '<div class="kmoe-progress-bar">' +
+              '<div class="kmoe-progress-fill" style="width:' + percent + '%"></div>' +
+              '</div>' +
+              '<div class="kmoe-progress-info">' + info + '</div>';
+          }
+          html += '</div>';
         }
       });
       bodyEl.innerHTML = html;
@@ -613,65 +702,170 @@
     }
   }
 
-  function startDownloadItem(item, index) {
+  function resolveDownloadUrl(item, callback) {
     getDownloadUrl(item.bookId, item.volId, item.format, function (rsp) {
       if (downloadCancelled || item.status === 4) {
+        callback(null);
         return;
       }
 
       var url;
       if (rsp && rsp.url) {
         url = rsp.url;
-        item.filename = rsp.name || item.filename;
+        item.filename = rsp.name ? sanitizeFilename(rsp.name) : item.filename;
+      } else if (item.downPrefix && item.downSuffix) {
+        url = item.downloadOrigin + item.downPrefix + item.volId + '/' + item.format + item.downSuffix;
       } else {
-        if (item.downPrefix && item.downSuffix) {
-          url = item.downloadOrigin + item.downPrefix + item.volId + '/' + item.format + item.downSuffix;
-        } else {
-          url = item.downloadOrigin + '/dl/' + item.bookId + '/' + item.volId + '/' + item.format + '/0/';
-        }
+        url = item.downloadOrigin + '/dl/' + item.bookId + '/' + item.volId + '/' + item.format + '/0/';
       }
 
-      var lastProgressTime = Date.now();
-      var lastLoaded = 0;
+      item.url = url;
+      callback(item);
+    });
+  }
 
-      kbHttpDown(url, item.filename, function (loaded, total) {
-        var now = Date.now();
-        var timeDiff = (now - lastProgressTime) / 1000;
-        item.progress = total > 0 ? Math.round((loaded / total) * 100) : 0;
-        item.speed = timeDiff > 0 ? (loaded - lastLoaded) / timeDiff : 0;
-        lastProgressTime = now;
-        lastLoaded = loaded;
-        updateProgressPanel();
-      }, function (blob, filename) {
-        kbSaveAs(blob, filename);
-        addDownloadRecord(item.bookId, item.volId, item.format, item.volName);
-        item.status = 2;
-        downloading--;
-        setTimeout(downloadRefresh, downloadDelay);
-      }, function (err) {
-        if (err === 429) {
-          item.retryCount = item.retryCount || 0;
-          if (item.retryCount < maxRetry) {
-            item.retryCount++;
-            item.status = 0;
-            setTimeout(function () {
-              downloadRefresh();
-            }, 5000 * item.retryCount);
-          } else {
-            item.status = 3;
-          }
-        } else {
-          item.retryCount = item.retryCount || 0;
-          if (item.retryCount < maxRetry) {
-            item.retryCount++;
-            item.status = 0;
-          } else {
-            item.status = 3;
-          }
+  function finishDownloadItem(item) {
+    if (downloadCancelled || item.status === 4) return;
+    if (item.downloadId) delete activeBrowserDownloads[item.downloadId];
+    item.progress = 100;
+    item.statusText = '完成';
+    addDownloadRecord(item.bookId, item.volId, item.format, item.volName);
+    item.status = 2;
+    downloading--;
+    setTimeout(downloadRefresh, downloadDelay);
+    updateProgressPanel();
+  }
+
+  function failDownloadItem(item, err) {
+    if (downloadCancelled || item.status === 4) return;
+    if (item.downloadId) delete activeBrowserDownloads[item.downloadId];
+
+    item.retryCount = item.retryCount || 0;
+    if (item.retryCount < maxRetry) {
+      item.retryCount++;
+      item.status = 0;
+      item.statusText = '';
+    } else {
+      item.status = 3;
+      item.statusText = err ? String(err) : '失败';
+    }
+
+    downloading--;
+    var retryDelay = err === 429 ? 5000 * item.retryCount : downloadDelay;
+    setTimeout(downloadRefresh, retryDelay);
+    updateProgressPanel();
+  }
+
+  function startBrowserDownload(item, url) {
+    item.progress = 0;
+    item.downloadMode = 'browser';
+    item.statusText = '已交给浏览器';
+    updateProgressPanel();
+
+    chrome.runtime.sendMessage({
+      type: 'KMOE_DOWNLOAD_START',
+      payload: {
+        itemId: item.id,
+        url: url,
+        filename: item.filename,
+        bookId: item.bookId,
+        title: item.bookTitle,
+        cover: item.bookCover,
+        pageUrl: item.pageUrl,
+        volId: item.volId,
+        volName: item.volName,
+        format: item.format
+      }
+    }, function (response) {
+      var err = chrome.runtime.lastError;
+      if (downloadCancelled || item.status === 4) return;
+
+      if (err || !response || !response.ok) {
+        failDownloadItem(item, err ? err.message : (response && response.error));
+        return;
+      }
+
+      item.downloadId = response.downloadId;
+      activeBrowserDownloads[item.downloadId] = item.id;
+      updateProgressPanel();
+    });
+  }
+
+  function startBrowserDownloadQueue() {
+    var pending = downloadQueue.length;
+    if (pending === 0) return;
+
+    downloadQueue.forEach(function (item) {
+      item.downloadMode = 'browser';
+      item.statusText = '准备下载链接';
+    });
+    updateProgressPanel();
+
+    downloadQueue.forEach(function (item) {
+      resolveDownloadUrl(item, function () {
+        pending--;
+        if (pending > 0) {
+          updateProgressPanel();
+          return;
         }
-        downloading--;
-        setTimeout(downloadRefresh, downloadDelay);
+
+        if (downloadCancelled) return;
+        chrome.runtime.sendMessage({
+          type: 'KMOE_DOWNLOAD_BATCH_START',
+          payload: {
+            items: downloadQueue,
+            maxDownload: maxDownload,
+            downloadDelay: downloadDelay,
+            maxRetry: maxRetry
+          }
+        }, function (response) {
+          var err = chrome.runtime.lastError;
+          if (err || !response || !response.ok) {
+            downloadQueue.forEach(function (entry) {
+              if (entry.status === 0) {
+                entry.status = 3;
+                entry.statusText = err ? err.message : '后台队列启动失败';
+              }
+            });
+          } else if (response.state && response.state.items) {
+            downloadQueue = response.state.items;
+          }
+          updateProgressPanel();
+        });
       });
+    });
+  }
+
+  function startXhrDownload(item, url) {
+    item.downloadMode = 'xhr';
+    var lastProgressTime = Date.now();
+    var lastLoaded = 0;
+
+    kbHttpDown(url, item.filename, function (loaded, total) {
+      var now = Date.now();
+      var timeDiff = (now - lastProgressTime) / 1000;
+      item.progress = total > 0 ? Math.round((loaded / total) * 100) : 0;
+      item.speed = timeDiff > 0 ? (loaded - lastLoaded) / timeDiff : 0;
+      item.statusText = '';
+      lastProgressTime = now;
+      lastLoaded = loaded;
+      updateProgressPanel();
+    }, function (blob, filename) {
+      kbSaveAs(blob, filename);
+      finishDownloadItem(item, false);
+    }, function (err) {
+      failDownloadItem(item, err);
+    });
+  }
+
+  function startDownloadItem(item, index) {
+    resolveDownloadUrl(item, function (resolvedItem) {
+      if (!resolvedItem) return;
+      if (downloadMode === 'xhr') {
+        startXhrDownload(item, item.url);
+      } else {
+        startBrowserDownload(item, item.url);
+      }
     });
   }
 
@@ -686,6 +880,7 @@
     downloadQueue = [];
     downloading = 0;
     activeXhrs.clear();
+    activeBrowserDownloads = {};
 
     var card = document.getElementById('kmoe-download-card');
     var formatSelect = card.querySelector('#kmoe-format');
@@ -702,7 +897,11 @@
       var filename = sanitizeFilename(chapterName) + '.' + formatExt;
 
       downloadQueue.push({
+        id: nextDownloadItemId++,
         bookId: bookInfo.bookId,
+        bookTitle: bookInfo.title || '',
+        bookCover: bookInfo.cover || '',
+        pageUrl: window.location.href,
         volId: chapterData.id,
         volName: chapterName,
         format: format,
@@ -717,7 +916,11 @@
 
     createProgressPanel();
     progressPanel.style.display = 'block';
-    downloadRefresh();
+    if (downloadMode === 'browser') {
+      startBrowserDownloadQueue();
+    } else {
+      downloadRefresh();
+    }
     hideCard();
   }
 
@@ -753,6 +956,7 @@
 
   function observeDOM() {
     createDownloadButton();
+    restoreBrowserDownloadPanel();
 
     var observer = new MutationObserver(function (mutations, obs) {
       createDownloadButton();
@@ -774,10 +978,65 @@
       maxDownload = settings.maxDownload || 1;
       downloadDelay = settings.downloadDelay || 1500;
       maxRetry = settings.maxRetry || 5;
+      downloadMode = settings.downloadMode || 'browser';
+      if (downloadMode !== 'browser' && downloadMode !== 'xhr') downloadMode = 'browser';
 
       console.log('Kmoe 设置已热更新:', settings);
     }
   });
+  chrome.runtime.onMessage.addListener(function (message) {
+    if (!message) return;
+    if (message.type === 'KMOE_DOWNLOAD_STATUS_CHANGED' && message.state && message.state.items) {
+      downloadQueue = message.state.items;
+      downloadCancelled = !message.state.active;
+      createProgressPanel();
+      progressPanel.style.display = 'block';
+      updateProgressPanel();
+      return;
+    }
+    if (message.type !== 'KMOE_DOWNLOAD_CHANGED') return;
+    var item = downloadQueue.find(function (entry) {
+      return entry.id === message.itemId;
+    });
+    if (message.item && item) {
+      Object.keys(message.item).forEach(function (key) {
+        item[key] = message.item[key];
+      });
+      updateProgressPanel();
+      return;
+    }
+    if (!item || item.status !== 1) return;
+
+    if (message.state === 'complete') {
+      finishDownloadItem(item, false);
+    } else if (message.state === 'interrupted') {
+      if (message.error === 'USER_CANCELED') {
+        item.status = 4;
+        item.statusText = '已取消';
+        updateProgressPanel();
+      } else {
+        failDownloadItem(item, message.error || 'interrupted');
+      }
+    }
+  });
+
+  function restoreBrowserDownloadPanel() {
+    chrome.runtime.sendMessage({ type: 'KMOE_DOWNLOAD_STATUS' }, function (response) {
+      var err = chrome.runtime.lastError;
+      if (err || !response || !response.state || !response.state.items) return;
+      var state = response.state;
+      var hasVisibleItems = state.items.some(function (item) {
+        return item.status === 0 || item.status === 1 || item.status === 3;
+      });
+      if (!state.active && !hasVisibleItems) return;
+      downloadMode = 'browser';
+      downloadQueue = state.items;
+      downloadCancelled = !state.active;
+      createProgressPanel();
+      progressPanel.style.display = 'block';
+      updateProgressPanel();
+    });
+  }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', observeDOM);
   } else {

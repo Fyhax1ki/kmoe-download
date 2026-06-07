@@ -5,6 +5,7 @@
   "description": "Kmoe 漫画下载扩展",
   "permissions": [
     "activeTab",
+    "downloads",
     "storage",
     "tabs"
   ],
@@ -54,6 +55,9 @@
       "128": "icons/Kmoe BatchDL.png"
     },
     "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "icons": {
     "16": "icons/Kmoe BatchDL.png",

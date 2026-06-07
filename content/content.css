@@ -23,6 +23,8 @@
   border-radius: 8px 8px 0 0;
   font-weight: 600;
   font-size: 14px;
+  cursor: move;
+  user-select: none;
 }
 
 .kmoe-card-close {
@@ -307,6 +309,8 @@
   color: #fff;
   font-weight: 600;
   font-size: 14px;
+  cursor: move;
+  user-select: none;
 }
 
 .kmoe-progress-actions {

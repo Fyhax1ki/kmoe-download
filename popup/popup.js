@@ -11,12 +11,16 @@ function loadSettings() {
     var settings = result.kmoe_settings || {
       maxDownload: 1,
       downloadDelay: 1500,
-      maxRetry: 5
+      maxRetry: 5,
+      downloadMode: 'browser'
     };
 
     document.getElementById('maxDownload').value = settings.maxDownload || 1;
     document.getElementById('downloadDelay').value = settings.downloadDelay || 1500;
     document.getElementById('maxRetry').value = settings.maxRetry || 5;
+    var downloadMode = settings.downloadMode || 'browser';
+    if (downloadMode !== 'browser' && downloadMode !== 'xhr') downloadMode = 'browser';
+    document.getElementById('downloadMode').value = downloadMode;
   });
 }
 
@@ -24,16 +28,19 @@ function saveSettings() {
   var maxDownload = parseInt(document.getElementById('maxDownload').value);
   var downloadDelay = parseInt(document.getElementById('downloadDelay').value);
   var maxRetry = parseInt(document.getElementById('maxRetry').value);
+  var downloadMode = document.getElementById('downloadMode').value;
 
   if (maxDownload < 1) maxDownload = 1;
   if (maxDownload > 3) maxDownload = 3;
   if (downloadDelay < 1500) downloadDelay = 1500;
   if (maxRetry < 1) maxRetry = 1;
+  if (downloadMode !== 'browser' && downloadMode !== 'xhr') downloadMode = 'browser';
 
   var settings = {
     maxDownload: maxDownload,
     downloadDelay: downloadDelay,
-    maxRetry: maxRetry
+    maxRetry: maxRetry,
+    downloadMode: downloadMode
   };
 
   chrome.storage.local.set({ kmoe_settings: settings }, function() {

@@ -50,7 +50,8 @@ h1 {
   color: #555;
 }
 
-.setting-item input {
+.setting-item input,
+.setting-item select {
   width: 70px;
   padding: 4px 8px;
   border: 1px solid #ddd;
@@ -59,7 +60,13 @@ h1 {
   text-align: center;
 }
 
-.setting-item input:focus {
+.setting-item select {
+  width: 96px;
+  text-align: left;
+}
+
+.setting-item input:focus,
+.setting-item select:focus {
   outline: none;
   border-color: #4a90d9;
 }
