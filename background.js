@@ -83,14 +83,27 @@
       var downloadRecords = result[RECORDS_KEY] || {};
       var now = Date.now();
       var expireTime = RECORD_EXPIRE_HOURS * 60 * 60 * 1000;
+      var bookTitle = record.title || record.bookTitle || '';
+      var bookCover = record.cover || record.bookCover || '';
+      var pageUrl = record.pageUrl || '';
 
       if (!downloadRecords[record.bookId]) {
         downloadRecords[record.bookId] = {
-          title: record.title || '',
-          cover: record.cover || '',
-          url: record.pageUrl || '',
+          title: bookTitle,
+          cover: bookCover,
+          url: pageUrl,
           volumes: {}
         };
+      } else {
+        if (!downloadRecords[record.bookId].title && bookTitle) {
+          downloadRecords[record.bookId].title = bookTitle;
+        }
+        if (!downloadRecords[record.bookId].cover && bookCover) {
+          downloadRecords[record.bookId].cover = bookCover;
+        }
+        if (!downloadRecords[record.bookId].url && pageUrl) {
+          downloadRecords[record.bookId].url = pageUrl;
+        }
       }
 
       if (!downloadRecords[record.bookId].volumes[record.volId]) {
