@@ -2,9 +2,11 @@ document.addEventListener('DOMContentLoaded', function() {
   loadSettings();
   loadHistoryCount();
 
-  document.getElementById('saveBtn').addEventListener('click', saveSettings);
+  bindAutoSave();
   document.getElementById('openHistory').addEventListener('click', openHistory);
 });
+
+var autoSaveTimer = null;
 
 function loadSettings() {
   chrome.storage.local.get(['kmoe_settings'], function(result) {
@@ -22,6 +24,18 @@ function loadSettings() {
     if (downloadMode !== 'browser' && downloadMode !== 'xhr') downloadMode = 'browser';
     document.getElementById('downloadMode').value = downloadMode;
   });
+}
+
+function bindAutoSave() {
+  ['maxDownload', 'downloadDelay', 'maxRetry'].forEach(function(id) {
+    document.getElementById(id).addEventListener('input', scheduleSaveSettings);
+  });
+  document.getElementById('downloadMode').addEventListener('change', scheduleSaveSettings);
+}
+
+function scheduleSaveSettings() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(saveSettings, 300);
 }
 
 function saveSettings() {
@@ -45,7 +59,7 @@ function saveSettings() {
 
   chrome.storage.local.set({ kmoe_settings: settings }, function() {
     var status = document.getElementById('saveStatus');
-    status.textContent = '已保存';
+    status.textContent = '已生效';
     setTimeout(function() {
       status.textContent = '';
     }, 1500);
