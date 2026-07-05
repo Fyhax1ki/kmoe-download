@@ -187,6 +187,13 @@
     return html;
   }
 
+  function formatQuotaSize(sizeMb) {
+    if (sizeMb >= 1024) {
+      return (sizeMb / 1024).toFixed(1) + 'GB';
+    }
+    return sizeMb.toFixed(1) + 'MB';
+  }
+
   function createCard() {
     if (!cachedBookInfo) {
       alert('数据加载中，请稍后再试');
@@ -194,7 +201,7 @@
     }
 
     const bookInfo = cachedBookInfo;
-    const quotaText = bookInfo.quotaAvailable !== null ? '可用额度: ' + bookInfo.quotaAvailable + 'MB' : '';
+    const quotaText = bookInfo.quotaAvailable !== null ? '可用额度: ' + formatQuotaSize(bookInfo.quotaAvailable) : '';
     const card = document.createElement('div');
     card.id = 'kmoe-download-card';
     card.innerHTML =
