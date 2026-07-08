@@ -245,7 +245,7 @@
     document.body.appendChild(card);
 
     card.querySelector('.kmoe-card-close').addEventListener('click', hideCard);
-    makePanelDraggable(card, card);
+    makePanelDraggable(card, card.querySelector('.kmoe-card-header'));
 
     var selectAllCheckbox = card.querySelector('#kmoe-select-all');
     selectAllCheckbox.addEventListener('change', function () {
