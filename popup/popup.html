@@ -29,13 +29,14 @@
       <div class="setting-item">
         <label for="downloadMode">下载方式</label>
         <select id="downloadMode">
-          <option value="browser">浏览器下载</option>
-          <option value="xhr">兼容模式</option>
+          <option value="aria2">aria2 下载</option>
+          <option value="xhr">直接下载</option>
         </select>
       </div>
     </div>
     
     <div class="section">
+      <button id="openAria2" class="btn-secondary">aria2 配置</button>
       <button id="openHistory" class="btn-secondary">查看下载历史 (<span id="historyCount">0</span>)</button>
     </div>
     

@@ -557,11 +557,19 @@
   var progressPanel = null;
   var downloadDelay = 1500;
   var maxRetry = 5;
-  var downloadMode = 'browser';
+  var downloadMode = 'aria2';
   var downloadCancelled = false;
   var activeXhrs = new Set();
   var activeBrowserDownloads = {};
+  var activeAria2Downloads = {};
+  var activeAria2PollTimers = {};
   var nextDownloadItemId = 1;
+
+  function normalizeDownloadMode(mode) {
+    if (mode === 'browser') return 'aria2';
+    if (mode === 'xhr') return 'xhr';
+    return 'aria2';
+  }
 
   function loadSettings() {
     chrome.storage.local.get(['kmoe_settings'], function (result) {
@@ -569,8 +577,7 @@
       maxDownload = settings.maxDownload || 1;
       downloadDelay = settings.downloadDelay || 1500;
       maxRetry = settings.maxRetry || 5;
-      downloadMode = settings.downloadMode || 'browser';
-      if (downloadMode !== 'browser' && downloadMode !== 'xhr') downloadMode = 'browser';
+      downloadMode = normalizeDownloadMode(settings.downloadMode);
     });
   }
 
@@ -618,6 +625,14 @@
         type: 'KMOE_DOWNLOAD_CANCEL'
       });
     }
+    if (downloadMode === 'aria2') {
+      Object.keys(activeAria2Downloads).forEach(function (gid) {
+        chrome.runtime.sendMessage({
+          type: 'KMOE_ARIA2_CANCEL',
+          payload: { gid: gid }
+        });
+      });
+    }
     Object.keys(activeBrowserDownloads).forEach(function (downloadId) {
       chrome.runtime.sendMessage({
         type: 'KMOE_DOWNLOAD_CANCEL',
@@ -625,6 +640,11 @@
       });
     });
     activeBrowserDownloads = {};
+    Object.keys(activeAria2PollTimers).forEach(function (gid) {
+      clearTimeout(activeAria2PollTimers[gid]);
+    });
+    activeAria2Downloads = {};
+    activeAria2PollTimers = {};
 
     downloadQueue.forEach(function (item) {
       if (item.status === 0 || item.status === 1) {
@@ -668,7 +688,7 @@
         if (item.status === 1 || (item.downloadMode === 'browser' && (item.status === 0 || item.status === 3))) {
           var percent = item.progress || 0;
           var speed = item.speed ? formatSpeed(item.speed) : '';
-          var info = item.statusText || (item.status === 0 ? '等待浏览器下载' : (percent + '% ' + speed));
+          var info = item.statusText || (item.status === 0 ? '等待后台下载' : (percent + '% ' + speed));
           html += '<div class="kmoe-progress-item">' +
             '<div class="kmoe-progress-name">' + item.filename + '</div>';
           if (item.downloadMode === 'browser') {
@@ -734,6 +754,13 @@
   function finishDownloadItem(item) {
     if (downloadCancelled || item.status === 4) return;
     if (item.downloadId) delete activeBrowserDownloads[item.downloadId];
+    if (item.gid) {
+      delete activeAria2Downloads[item.gid];
+      if (activeAria2PollTimers[item.gid]) {
+        clearTimeout(activeAria2PollTimers[item.gid]);
+        delete activeAria2PollTimers[item.gid];
+      }
+    }
     item.progress = 100;
     item.statusText = '完成';
     addDownloadRecord(item.bookId, item.volId, item.format, item.volName);
@@ -746,6 +773,14 @@
   function failDownloadItem(item, err) {
     if (downloadCancelled || item.status === 4) return;
     if (item.downloadId) delete activeBrowserDownloads[item.downloadId];
+    if (item.gid) {
+      delete activeAria2Downloads[item.gid];
+      if (activeAria2PollTimers[item.gid]) {
+        clearTimeout(activeAria2PollTimers[item.gid]);
+        delete activeAria2PollTimers[item.gid];
+      }
+      item.gid = null;
+    }
 
     item.retryCount = item.retryCount || 0;
     if (item.retryCount < maxRetry) {
@@ -859,19 +894,110 @@
       updateProgressPanel();
     }, function (blob, filename) {
       kbSaveAs(blob, filename);
-      finishDownloadItem(item, false);
+      finishDownloadItem(item);
     }, function (err) {
       failDownloadItem(item, err);
     });
   }
 
+  function getAria2Headers() {
+    var headers = ['X-KM-FROM: kb_http_down'];
+    return headers;
+  }
+
+  function pollAria2Download(item) {
+    if (!item || !item.gid || downloadCancelled || item.status === 4) return;
+
+    chrome.runtime.sendMessage({
+      type: 'KMOE_ARIA2_TELL_STATUS',
+      payload: { gid: item.gid }
+    }, function (response) {
+      var err = chrome.runtime.lastError;
+      if (downloadCancelled || item.status === 4) return;
+
+      if (err || !response || !response.ok) {
+        failDownloadItem(item, err ? err.message : (response && response.error));
+        return;
+      }
+
+      var status = response.status || {};
+      var total = parseInt(status.totalLength || '0', 10);
+      var completed = parseInt(status.completedLength || '0', 10);
+      item.progress = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : item.progress || 0;
+      item.speed = parseInt(status.downloadSpeed || '0', 10);
+
+      if (status.status === 'complete') {
+        finishDownloadItem(item);
+        return;
+      }
+      if (status.status === 'error') {
+        failDownloadItem(item, status.errorMessage || status.errorCode || 'aria2 下载失败');
+        return;
+      }
+      if (status.status === 'removed') {
+        failDownloadItem(item, 'aria2 任务已移除');
+        return;
+      }
+
+      if (status.status === 'waiting') {
+        item.statusText = 'aria2 等待中';
+      } else if (status.status === 'paused') {
+        item.statusText = 'aria2 已暂停';
+      } else {
+        item.statusText = '';
+      }
+      updateProgressPanel();
+
+      activeAria2PollTimers[item.gid] = setTimeout(function () {
+        pollAria2Download(item);
+      }, 1000);
+    });
+  }
+
+  function startAria2Download(item, url) {
+    item.downloadMode = 'aria2';
+    item.progress = 0;
+    item.speed = 0;
+    item.statusText = '提交到 aria2';
+    updateProgressPanel();
+
+    chrome.runtime.sendMessage({
+      type: 'KMOE_ARIA2_ADD_URI',
+      payload: {
+        url: url,
+        filename: item.filename,
+        cookie: document.cookie || '',
+        headers: getAria2Headers(),
+        referer: window.location.href,
+        pageUrl: item.pageUrl
+      }
+    }, function (response) {
+      var err = chrome.runtime.lastError;
+      if (downloadCancelled || item.status === 4) return;
+
+      if (err || !response || !response.ok) {
+        failDownloadItem(item, err ? err.message : (response && response.error));
+        return;
+      }
+
+      item.gid = response.gid;
+      activeAria2Downloads[item.gid] = item.id;
+      item.statusText = 'aria2 下载中';
+      updateProgressPanel();
+      pollAria2Download(item);
+    });
+  }
+
   function startDownloadItem(item, index) {
     resolveDownloadUrl(item, function (resolvedItem) {
-      if (!resolvedItem) return;
-      if (downloadMode === 'xhr') {
-        startXhrDownload(item, item.url);
+      if (!resolvedItem) {
+        failDownloadItem(item, '下载链接解析失败');
+        return;
+      }
+      if (downloadMode === 'aria2') {
+        startAria2Download(item, item.url);
       } else {
-        startBrowserDownload(item, item.url);
+        startXhrDownload(item, item.url);
       }
     });
   }
@@ -888,6 +1014,11 @@
     downloading = 0;
     activeXhrs.clear();
     activeBrowserDownloads = {};
+    Object.keys(activeAria2PollTimers).forEach(function (gid) {
+      clearTimeout(activeAria2PollTimers[gid]);
+    });
+    activeAria2Downloads = {};
+    activeAria2PollTimers = {};
 
     var card = document.getElementById('kmoe-download-card');
     var formatSelect = card.querySelector('#kmoe-format');
@@ -923,6 +1054,7 @@
 
     createProgressPanel();
     progressPanel.style.display = 'block';
+    downloadMode = normalizeDownloadMode(downloadMode);
     if (downloadMode === 'browser') {
       startBrowserDownloadQueue();
     } else {
@@ -985,8 +1117,7 @@
       maxDownload = settings.maxDownload || 1;
       downloadDelay = settings.downloadDelay || 1500;
       maxRetry = settings.maxRetry || 5;
-      downloadMode = settings.downloadMode || 'browser';
-      if (downloadMode !== 'browser' && downloadMode !== 'xhr') downloadMode = 'browser';
+      downloadMode = normalizeDownloadMode(settings.downloadMode);
 
       console.log('Kmoe 设置已热更新:', settings);
     }

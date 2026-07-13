@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>aria2 配置 - Kmoe Download</title>
+  <link rel="stylesheet" href="aria2.css">
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <h1>aria2 配置</h1>
+      <p>用于 aria2 JSON-RPC 下载模式。</p>
+    </header>
+
+    <section class="panel">
+      <div class="field">
+        <label for="rpcUrl">RPC 地址</label>
+        <input id="rpcUrl" type="url" spellcheck="false" placeholder="http://127.0.0.1:6800/jsonrpc">
+      </div>
+
+      <div class="field">
+        <label for="rpcToken">RPC Token</label>
+        <input id="rpcToken" type="password" spellcheck="false" autocomplete="off" placeholder="未设置可留空">
+      </div>
+
+      <div class="field">
+        <label for="downloadDir">下载目录</label>
+        <input id="downloadDir" type="text" spellcheck="false" placeholder="留空使用 aria2 默认目录">
+      </div>
+
+      <div class="grid">
+        <div class="field">
+          <label for="split">分片数</label>
+          <input id="split" type="number" min="1" max="16" value="4">
+        </div>
+
+        <div class="field">
+          <label for="maxConnectionPerServer">单服务器连接数</label>
+          <input id="maxConnectionPerServer" type="number" min="1" max="16" value="4">
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="testConnection" class="btn-secondary">测试连接</button>
+        <button id="saveSettings" class="btn-primary">保存配置</button>
+      </div>
+
+      <div id="status" class="status" role="status"></div>
+    </section>
+  </main>
+
+  <script src="aria2.js"></script>
+</body>
+</html>

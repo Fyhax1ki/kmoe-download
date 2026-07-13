@@ -74,6 +74,7 @@ h1 {
 .btn-secondary {
   width: 100%;
   padding: 10px 16px;
+  margin-bottom: 8px;
   background: #f5f5f5;
   color: #333;
   border: 1px solid #ddd;
@@ -81,6 +82,10 @@ h1 {
   font-size: 13px;
   cursor: pointer;
   transition: all 0.15s;
+}
+
+.btn-secondary:last-child {
+  margin-bottom: 0;
 }
 
 .btn-secondary:hover {
