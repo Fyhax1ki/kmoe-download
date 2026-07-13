@@ -416,17 +416,19 @@
 
     function startDrag(event) {
       if (event.button !== undefined && event.button !== 0) return;
-      if (event.target && event.target.closest('button, input, select, textarea, a, label, .kmoe-chapter-list')) return;
+      if (event.target && event.target.closest && event.target.closest('button, input, select, textarea, a, label, .kmoe-chapter-list')) return;
 
       var point = getPoint(event);
       var rect = panel.getBoundingClientRect();
       dragging = true;
-      activePointerId = event.pointerId;
+      activePointerId = typeof event.pointerId === 'number' ? event.pointerId : null;
       offsetX = point.clientX - rect.left;
       offsetY = point.clientY - rect.top;
       moveTo(point.clientX, point.clientY);
       if (handle.setPointerCapture && activePointerId !== null) {
-        handle.setPointerCapture(activePointerId);
+        try {
+          handle.setPointerCapture(activePointerId);
+        } catch (e) {}
       }
       event.preventDefault();
     }
@@ -943,16 +945,26 @@
     activeAria2PollTimers = {};
 
     var card = document.getElementById('kmoe-download-card');
+    if (!card) {
+      alert('下载面板不存在，请重新打开下载面板');
+      return;
+    }
     var formatSelect = card.querySelector('#kmoe-format');
+    if (!formatSelect) {
+      alert('请选择文件格式');
+      return;
+    }
     var format = formatSelect.value;
     var formatExt = format === '1' ? 'mobi' : 'epub';
 
     var downloadOrigin = bookInfo.downloadOrigin || window.location.origin;
     var downPrefix = bookInfo.downPrefix || '';
     var downSuffix = bookInfo.downSuffix || '/0/';
+    var chapters = Array.isArray(bookInfo.arr) ? bookInfo.arr : [];
 
     selected.forEach(function (chapter) {
-      var chapterData = bookInfo.arr[chapter.index];
+      var chapterData = chapters[chapter.index];
+      if (!chapterData || !chapterData.id) return;
       var chapterName = chapterData.name || '第' + (chapter.index + 1) + '章';
       var filename = sanitizeFilename(chapterName) + '.' + formatExt;
 
@@ -973,6 +985,11 @@
         retryCount: 0
       });
     });
+
+    if (downloadQueue.length === 0) {
+      alert('未找到可下载章节，请刷新页面后重试');
+      return;
+    }
 
     createProgressPanel();
     progressPanel.style.display = 'block';
