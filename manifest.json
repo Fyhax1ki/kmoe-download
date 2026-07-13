@@ -5,7 +5,6 @@
   "description": "Kmoe 漫画下载扩展",
   "permissions": [
     "activeTab",
-    "downloads",
     "storage",
     "tabs"
   ],
