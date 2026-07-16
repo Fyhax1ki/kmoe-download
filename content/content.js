@@ -593,13 +593,28 @@
     return 'aria2';
   }
 
+  function normalizeMaxDownload(value, mode) {
+    var normalized = parseInt(value, 10);
+    if (!normalized || normalized < 1) normalized = 1;
+    if (mode === 'xhr' && normalized > 3) normalized = 3;
+    return normalized;
+  }
+
+  function getEffectiveMaxDownload() {
+    var limit = normalizeMaxDownload(maxDownload, downloadMode);
+    if (downloadQueue.length > 0) {
+      limit = Math.min(limit, downloadQueue.length);
+    }
+    return limit;
+  }
+
   function loadSettings() {
     chrome.storage.local.get(['kmoe_settings'], function (result) {
       var settings = result.kmoe_settings || {};
-      maxDownload = settings.maxDownload || 1;
+      downloadMode = normalizeDownloadMode(settings.downloadMode);
+      maxDownload = normalizeMaxDownload(settings.maxDownload || 1, downloadMode);
       downloadDelay = settings.downloadDelay || 1500;
       maxRetry = settings.maxRetry || 5;
-      downloadMode = normalizeDownloadMode(settings.downloadMode);
     });
   }
 
@@ -688,7 +703,7 @@
 
     var statsEl = document.getElementById('kmoe-progress-stats');
     if (statsEl) {
-      statsEl.textContent = '等待: ' + numQueued + ' | 下载中: ' + numDownloading + ' | 完成: ' + numSuccess + ' | 失败: ' + numFail;
+      statsEl.textContent = '等待: ' + numQueued + ' | 下载中: ' + numDownloading + '/' + getEffectiveMaxDownload() + ' | 完成: ' + numSuccess + ' | 失败: ' + numFail;
     }
 
     var bodyEl = document.getElementById('kmoe-progress-body');
@@ -723,10 +738,11 @@
   function downloadRefresh() {
     if (downloadCancelled) return;
     updateProgressPanel();
-    if (downloading < maxDownload) {
+    var effectiveMaxDownload = getEffectiveMaxDownload();
+    if (downloading < effectiveMaxDownload) {
       for (var i = 0; i < downloadQueue.length; i++) {
         var item = downloadQueue[i];
-        if (item.status === 0 && downloading < maxDownload) {
+        if (item.status === 0 && downloading < effectiveMaxDownload) {
           item.status = 1;
           downloading++;
           startDownloadItem(item, i);
@@ -1048,10 +1064,10 @@
     if (areaName === 'local' && changes.kmoe_settings) {
       var settings = changes.kmoe_settings.newValue || {};
 
-      maxDownload = settings.maxDownload || 1;
+      downloadMode = normalizeDownloadMode(settings.downloadMode);
+      maxDownload = normalizeMaxDownload(settings.maxDownload || 1, downloadMode);
       downloadDelay = settings.downloadDelay || 1500;
       maxRetry = settings.maxRetry || 5;
-      downloadMode = normalizeDownloadMode(settings.downloadMode);
 
       console.log('Kmoe 设置已热更新:', settings);
     }
