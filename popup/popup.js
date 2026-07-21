@@ -9,6 +9,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 var autoSaveTimer = null;
 var XHR_MAX_DOWNLOAD = 3;
+var maxDownloadByMode = {
+  aria2: 1,
+  xhr: 1
+};
+var currentDownloadMode = 'aria2';
 
 function normalizeDownloadMode(mode) {
   if (mode === 'browser') return 'aria2';
@@ -23,6 +28,23 @@ function normalizeMaxDownload(value, mode) {
   return maxDownload;
 }
 
+function normalizeMaxDownloadByMode(settings) {
+  settings = settings || {};
+  var stored = settings.maxDownloadByMode || {};
+  var fallback = settings.maxDownload || 1;
+
+  return {
+    aria2: normalizeMaxDownload(stored.aria2 || fallback, 'aria2'),
+    xhr: normalizeMaxDownload(stored.xhr || fallback, 'xhr')
+  };
+}
+
+function syncCurrentMaxDownload() {
+  var input = document.getElementById('maxDownload');
+  maxDownloadByMode[currentDownloadMode] = normalizeMaxDownload(input.value, currentDownloadMode);
+  input.value = maxDownloadByMode[currentDownloadMode];
+}
+
 function updateMaxDownloadControl() {
   var input = document.getElementById('maxDownload');
   var mode = normalizeDownloadMode(document.getElementById('downloadMode').value);
@@ -33,7 +55,7 @@ function updateMaxDownloadControl() {
     input.value = normalizeMaxDownload(input.value, mode);
   } else {
     input.removeAttribute('max');
-    input.title = 'aria2 模式不限制总并发；实际并发不会超过本次选中的章节数';
+    input.title = 'aria2 模式会同步设置 aria2 的同时下载任务数';
   }
 }
 
@@ -47,8 +69,10 @@ function loadSettings() {
     };
 
     var downloadMode = normalizeDownloadMode(settings.downloadMode);
+    maxDownloadByMode = normalizeMaxDownloadByMode(settings);
+    currentDownloadMode = downloadMode;
     document.getElementById('downloadMode').value = downloadMode;
-    document.getElementById('maxDownload').value = normalizeMaxDownload(settings.maxDownload || 1, downloadMode);
+    document.getElementById('maxDownload').value = maxDownloadByMode[downloadMode];
     document.getElementById('downloadDelay').value = settings.downloadDelay || 1500;
     document.getElementById('maxRetry').value = settings.maxRetry || 5;
     updateMaxDownloadControl();
@@ -60,6 +84,9 @@ function bindAutoSave() {
     document.getElementById(id).addEventListener('input', scheduleSaveSettings);
   });
   document.getElementById('downloadMode').addEventListener('change', function () {
+    syncCurrentMaxDownload();
+    currentDownloadMode = normalizeDownloadMode(document.getElementById('downloadMode').value);
+    document.getElementById('maxDownload').value = maxDownloadByMode[currentDownloadMode];
     updateMaxDownloadControl();
     scheduleSaveSettings();
   });
@@ -76,24 +103,43 @@ function saveSettings() {
   var maxRetry = parseInt(document.getElementById('maxRetry').value);
   var downloadMode = normalizeDownloadMode(document.getElementById('downloadMode').value);
 
+  currentDownloadMode = downloadMode;
   maxDownload = normalizeMaxDownload(maxDownload, downloadMode);
+  maxDownloadByMode[downloadMode] = maxDownload;
   if (downloadDelay < 1500) downloadDelay = 1500;
   if (maxRetry < 1) maxRetry = 1;
 
   chrome.storage.local.get(['kmoe_settings'], function(result) {
     var settings = result.kmoe_settings || {};
     settings.maxDownload = maxDownload;
+    settings.maxDownloadByMode = {
+      aria2: normalizeMaxDownload(maxDownloadByMode.aria2, 'aria2'),
+      xhr: normalizeMaxDownload(maxDownloadByMode.xhr, 'xhr')
+    };
     settings.downloadDelay = downloadDelay;
     settings.maxRetry = maxRetry;
     settings.downloadMode = downloadMode;
 
     chrome.storage.local.set({ kmoe_settings: settings }, function() {
+      applyAria2Options(settings);
       var status = document.getElementById('saveStatus');
       status.textContent = '已生效';
       setTimeout(function() {
         status.textContent = '';
       }, 1500);
     });
+  });
+}
+
+function applyAria2Options(settings) {
+  if (normalizeDownloadMode(settings.downloadMode) !== 'aria2') return;
+  if (!chrome.runtime || !chrome.runtime.sendMessage) return;
+
+  chrome.runtime.sendMessage({
+    type: 'KMOE_ARIA2_APPLY_OPTIONS',
+    payload: {
+      maxConcurrentDownloads: settings.maxDownloadByMode.aria2 || settings.maxDownload
+    }
   });
 }
 

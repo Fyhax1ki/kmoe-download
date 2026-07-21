@@ -6,6 +6,7 @@
   const DOWNLOAD_URL_TIMEOUT_MS = 30000;
   const DOWNLOAD_REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
   const DOWNLOAD_STALL_TIMEOUT_MS = 90000;
+  const XHR_MAX_DOWNLOAD = 3;
   let cardVisible = false;
   let cachedBookInfo = null;
   var downloadRecords = {};
@@ -596,8 +597,23 @@
   function normalizeMaxDownload(value, mode) {
     var normalized = parseInt(value, 10);
     if (!normalized || normalized < 1) normalized = 1;
-    if (mode === 'xhr' && normalized > 3) normalized = 3;
+    if (mode === 'xhr' && normalized > XHR_MAX_DOWNLOAD) normalized = XHR_MAX_DOWNLOAD;
     return normalized;
+  }
+
+  function normalizeMaxDownloadByMode(settings) {
+    settings = settings || {};
+    var stored = settings.maxDownloadByMode || {};
+    var fallback = settings.maxDownload || 1;
+
+    return {
+      aria2: normalizeMaxDownload(stored.aria2 || fallback, 'aria2'),
+      xhr: normalizeMaxDownload(stored.xhr || fallback, 'xhr')
+    };
+  }
+
+  function getSettingsMaxDownload(settings, mode) {
+    return normalizeMaxDownloadByMode(settings)[mode];
   }
 
   function getEffectiveMaxDownload() {
@@ -612,7 +628,7 @@
     chrome.storage.local.get(['kmoe_settings'], function (result) {
       var settings = result.kmoe_settings || {};
       downloadMode = normalizeDownloadMode(settings.downloadMode);
-      maxDownload = normalizeMaxDownload(settings.maxDownload || 1, downloadMode);
+      maxDownload = getSettingsMaxDownload(settings, downloadMode);
       downloadDelay = settings.downloadDelay || 1500;
       maxRetry = settings.maxRetry || 5;
     });
@@ -907,6 +923,7 @@
       payload: {
         url: url,
         filename: item.filename,
+        maxConcurrentDownloads: getEffectiveMaxDownload(),
         cookie: document.cookie || '',
         headers: getAria2Headers(),
         referer: window.location.href,
@@ -1065,7 +1082,7 @@
       var settings = changes.kmoe_settings.newValue || {};
 
       downloadMode = normalizeDownloadMode(settings.downloadMode);
-      maxDownload = normalizeMaxDownload(settings.maxDownload || 1, downloadMode);
+      maxDownload = getSettingsMaxDownload(settings, downloadMode);
       downloadDelay = settings.downloadDelay || 1500;
       maxRetry = settings.maxRetry || 5;
 

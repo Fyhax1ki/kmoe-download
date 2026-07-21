@@ -109,15 +109,48 @@
     return options;
   }
 
+  function normalizeMaxConcurrentDownloads(value) {
+    var maxConcurrentDownloads = parseInt(value, 10);
+    if (!maxConcurrentDownloads || maxConcurrentDownloads < 1) maxConcurrentDownloads = 1;
+    return maxConcurrentDownloads;
+  }
+
+  function applyAria2GlobalOptions(aria2, payload, callback) {
+    var maxConcurrentDownloads = normalizeMaxConcurrentDownloads(payload.maxConcurrentDownloads);
+    aria2Rpc(aria2, 'aria2.changeGlobalOption', [{
+      'max-concurrent-downloads': String(maxConcurrentDownloads)
+    }], callback);
+  }
+
   function handleAria2Add(message, sendResponse) {
     var payload = message.payload || {};
     loadAria2Settings(function (aria2) {
-      aria2Rpc(aria2, 'aria2.addUri', [[payload.url], getAria2Options(aria2, payload)], function (err, gid) {
+      applyAria2GlobalOptions(aria2, payload, function (optionErr) {
+        if (optionErr) {
+          sendResponse({ ok: false, error: optionErr.message });
+          return;
+        }
+
+        aria2Rpc(aria2, 'aria2.addUri', [[payload.url], getAria2Options(aria2, payload)], function (err, gid) {
+          if (err) {
+            sendResponse({ ok: false, error: err.message });
+            return;
+          }
+          sendResponse({ ok: true, gid: gid });
+        });
+      });
+    });
+  }
+
+  function handleAria2ApplyOptions(message, sendResponse) {
+    var payload = message.payload || {};
+    loadAria2Settings(function (aria2) {
+      applyAria2GlobalOptions(aria2, payload, function (err) {
         if (err) {
           sendResponse({ ok: false, error: err.message });
           return;
         }
-        sendResponse({ ok: true, gid: gid });
+        sendResponse({ ok: true });
       });
     });
   }
@@ -168,6 +201,11 @@
 
     if (message.type === 'KMOE_ARIA2_ADD_URI') {
       handleAria2Add(message, sendResponse);
+      return true;
+    }
+
+    if (message.type === 'KMOE_ARIA2_APPLY_OPTIONS') {
+      handleAria2ApplyOptions(message, sendResponse);
       return true;
     }
 
