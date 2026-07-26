@@ -7,9 +7,11 @@
   const DOWNLOAD_REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
   const DOWNLOAD_STALL_TIMEOUT_MS = 90000;
   const XHR_MAX_DOWNLOAD = 3;
+  const DEFAULT_DOWNLOAD_FORMAT = '1';
   let cardVisible = false;
   let cachedBookInfo = null;
   var downloadRecords = {};
+  var preferredDownloadFormat = DEFAULT_DOWNLOAD_FORMAT;
 
   function injectPageBridge() {
     const script = document.createElement('script');
@@ -216,6 +218,23 @@
     return sizeMb.toFixed(1) + 'MB';
   }
 
+  function normalizeDownloadFormat(format) {
+    return format === '2' ? '2' : DEFAULT_DOWNLOAD_FORMAT;
+  }
+
+  function getPreferredDownloadFormat() {
+    return normalizeDownloadFormat(preferredDownloadFormat);
+  }
+
+  function savePreferredDownloadFormat(format) {
+    preferredDownloadFormat = normalizeDownloadFormat(format);
+    chrome.storage.local.get(['kmoe_settings'], function (result) {
+      var settings = result.kmoe_settings || {};
+      settings.downloadFormat = preferredDownloadFormat;
+      chrome.storage.local.set({ kmoe_settings: settings });
+    });
+  }
+
   function createCard() {
     if (!cachedBookInfo) {
       alert('数据加载中，请稍后再试');
@@ -224,6 +243,7 @@
 
     const bookInfo = cachedBookInfo;
     const quotaText = bookInfo.quotaAvailable !== null ? '可用额度: ' + formatQuotaSize(bookInfo.quotaAvailable) : '';
+    const initialFormat = getPreferredDownloadFormat();
     const card = document.createElement('div');
     card.id = 'kmoe-download-card';
     card.innerHTML =
@@ -255,7 +275,7 @@
       '<span class="kmoe-chapter-count">已选 <span id="kmoe-selected-count">' + bookInfo.arr.length + '</span> / ' + bookInfo.arr.length + ' 章</span>' +
       '</div>' +
       '<div class="kmoe-chapter-list" id="kmoe-chapter-list">' +
-      renderChapterList(bookInfo.arr, '1', bookInfo.bookId) +
+      renderChapterList(bookInfo.arr, initialFormat, bookInfo.bookId) +
       '</div>' +
       '<div class="kmoe-download-info">' +
       '<span>选中大小: <span id="kmoe-selected-size">0</span>MB</span>' +
@@ -265,6 +285,11 @@
       '</div>' +
       '</div>';
     document.body.appendChild(card);
+
+    var formatSelect = card.querySelector('#kmoe-format');
+    if (formatSelect) {
+      formatSelect.value = initialFormat;
+    }
 
     card.querySelector('.kmoe-card-close').addEventListener('click', hideCard);
     makePanelDraggable(card, card.querySelector('.kmoe-card-header'));
@@ -294,6 +319,7 @@
 
     card.querySelector('#kmoe-format').addEventListener('change', function () {
       var format = this.value;
+      savePreferredDownloadFormat(format);
       var listEl = card.querySelector('#kmoe-chapter-list');
       listEl.innerHTML = renderChapterList(bookInfo.arr, format, bookInfo.bookId);
       updateSelectionInfo(bookInfo);
@@ -392,6 +418,17 @@
 
   function sanitizeFilename(name) {
     return name.replace(/[<>:"/\\|?*]/g, '_').trim();
+  }
+
+  function buildMangaDirectoryName(bookInfo) {
+    var title = bookInfo && bookInfo.title ? sanitizeFilename(bookInfo.title) : '';
+    if (title) return title;
+    var bookId = bookInfo && bookInfo.bookId ? bookInfo.bookId : 'unknown';
+    return 'book-' + sanitizeFilename(String(bookId));
+  }
+
+  function buildDownloadPath(directory, filename) {
+    return directory ? directory + '/' + filename : filename;
   }
 
   function makePanelDraggable(panel, handle) {
@@ -631,6 +668,7 @@
       maxDownload = getSettingsMaxDownload(settings, downloadMode);
       downloadDelay = settings.downloadDelay || 1500;
       maxRetry = settings.maxRetry || 5;
+      preferredDownloadFormat = normalizeDownloadFormat(settings.downloadFormat);
     });
   }
 
@@ -777,7 +815,10 @@
       var url;
       if (rsp && rsp.url) {
         url = rsp.url;
-        item.filename = rsp.name ? sanitizeFilename(rsp.name) : item.filename;
+        if (rsp.name) {
+          item.filename = sanitizeFilename(rsp.name);
+          item.downloadPath = buildDownloadPath(item.downloadDir, item.filename);
+        }
       } else if (item.downPrefix && item.downSuffix) {
         url = item.downloadOrigin + item.downPrefix + item.volId + '/' + item.format + item.downSuffix;
       } else {
@@ -923,6 +964,7 @@
       payload: {
         url: url,
         filename: item.filename,
+        directory: item.downloadDir,
         maxConcurrentDownloads: getEffectiveMaxDownload(),
         cookie: document.cookie || '',
         headers: getAria2Headers(),
@@ -994,12 +1036,14 @@
     var downPrefix = bookInfo.downPrefix || '';
     var downSuffix = bookInfo.downSuffix || '/0/';
     var chapters = Array.isArray(bookInfo.arr) ? bookInfo.arr : [];
+    var downloadDir = buildMangaDirectoryName(bookInfo);
 
     selected.forEach(function (chapter) {
       var chapterData = chapters[chapter.index];
       if (!chapterData || !chapterData.id) return;
       var chapterName = chapterData.name || '第' + (chapter.index + 1) + '章';
       var filename = sanitizeFilename(chapterName) + '.' + formatExt;
+      var downloadPath = buildDownloadPath(downloadDir, filename);
 
       downloadQueue.push({
         id: nextDownloadItemId++,
@@ -1011,6 +1055,8 @@
         volName: chapterName,
         format: format,
         filename: filename,
+        downloadDir: downloadDir,
+        downloadPath: downloadPath,
         downloadOrigin: downloadOrigin,
         downPrefix: downPrefix,
         downSuffix: downSuffix,
@@ -1085,6 +1131,7 @@
       maxDownload = getSettingsMaxDownload(settings, downloadMode);
       downloadDelay = settings.downloadDelay || 1500;
       maxRetry = settings.maxRetry || 5;
+      preferredDownloadFormat = normalizeDownloadFormat(settings.downloadFormat);
 
       console.log('Kmoe 设置已热更新:', settings);
     }

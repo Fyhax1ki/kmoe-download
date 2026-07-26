@@ -77,7 +77,23 @@
     });
   }
 
+  function sanitizeDirectoryName(name) {
+    name = String(name || '').replace(/[<>:"/\\|?*]/g, '_').trim();
+    if (!name || name === '.' || name === '..') return '';
+    return name;
+  }
+
+  function joinAria2Dir(baseDir, subDir) {
+    subDir = sanitizeDirectoryName(subDir);
+    if (!subDir) return baseDir || '';
+    if (!baseDir) return '';
+
+    var separator = baseDir.indexOf('\\') !== -1 ? '\\' : '/';
+    return baseDir.replace(/[\\/]+$/, '') + separator + subDir;
+  }
+
   function getAria2Options(aria2, payload) {
+    var dir = joinAria2Dir(aria2.dir, payload.directory);
     var options = {
       out: payload.filename || undefined,
       split: String(aria2.split),
@@ -86,8 +102,8 @@
       header: []
     };
 
-    if (aria2.dir) {
-      options.dir = aria2.dir;
+    if (dir) {
+      options.dir = dir;
     }
     if (payload.cookie) {
       options.header.push('Cookie: ' + payload.cookie);
