@@ -92,8 +92,36 @@
     return baseDir.replace(/[\\/]+$/, '') + separator + subDir;
   }
 
-  function getAria2Options(aria2, payload) {
-    var dir = joinAria2Dir(aria2.dir, payload.directory);
+  function resolveAria2Dir(aria2, payload, callback) {
+    var subDir = sanitizeDirectoryName(payload.directory);
+    if (!subDir) {
+      callback(null, aria2.dir || '');
+      return;
+    }
+
+    if (aria2.dir) {
+      callback(null, joinAria2Dir(aria2.dir, subDir));
+      return;
+    }
+
+    aria2Rpc(aria2, 'aria2.getGlobalOption', [], function (err, options) {
+      var globalDir;
+      if (err) {
+        callback(err);
+        return;
+      }
+
+      globalDir = options && options.dir ? String(options.dir).trim() : '';
+      if (!globalDir || globalDir === '.') {
+        callback(new Error('aria2 默认下载目录为空，请在 aria2 或扩展 aria2 配置中设置下载目录'));
+        return;
+      }
+
+      callback(null, joinAria2Dir(globalDir, subDir));
+    });
+  }
+
+  function getAria2Options(aria2, payload, dir) {
     var options = {
       out: payload.filename || undefined,
       split: String(aria2.split),
@@ -147,12 +175,19 @@
           return;
         }
 
-        aria2Rpc(aria2, 'aria2.addUri', [[payload.url], getAria2Options(aria2, payload)], function (err, gid) {
-          if (err) {
-            sendResponse({ ok: false, error: err.message });
+        resolveAria2Dir(aria2, payload, function (dirErr, dir) {
+          if (dirErr) {
+            sendResponse({ ok: false, error: dirErr.message });
             return;
           }
-          sendResponse({ ok: true, gid: gid });
+
+          aria2Rpc(aria2, 'aria2.addUri', [[payload.url], getAria2Options(aria2, payload, dir)], function (err, gid) {
+            if (err) {
+              sendResponse({ ok: false, error: err.message });
+              return;
+            }
+            sendResponse({ ok: true, gid: gid });
+          });
         });
       });
     });
