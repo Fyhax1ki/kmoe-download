@@ -2,6 +2,7 @@
   'use strict';
 
   const SOURCE = 'kmoe-download-page-bridge';
+  const MESSAGE_PREFIX = 'KMOE_MANGA_DATA=';
   const RECORD_EXPIRE_HOURS = 48;
   const DOWNLOAD_URL_TIMEOUT_MS = 30000;
   const DOWNLOAD_REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
@@ -22,10 +23,27 @@
     (document.head || document.documentElement).appendChild(script);
   }
 
+  function parseBridgePayload(data) {
+    if (data && data.source === SOURCE && data.type === 'MANGA_DATA') {
+      return data.payload;
+    }
+
+    if (typeof data === 'string' && data.indexOf(MESSAGE_PREFIX) === 0) {
+      try {
+        return JSON.parse(data.slice(MESSAGE_PREFIX.length));
+      } catch (e) {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
   window.addEventListener('message', function (event) {
     if (event.source !== window) return;
-    if (event.data && event.data.source === SOURCE && event.data.type === 'MANGA_DATA') {
-      cachedBookInfo = event.data.payload;
+    var payload = parseBridgePayload(event.data);
+    if (payload) {
+      cachedBookInfo = payload;
     }
   });
 
@@ -218,6 +236,80 @@
     return sizeMb.toFixed(1) + 'MB';
   }
 
+  function getTrimmedText(selector) {
+    var node = document.querySelector(selector);
+    return node && node.textContent ? node.textContent.trim() : '';
+  }
+
+  function collectAuthorNames() {
+    return Array.from(document.querySelectorAll("a[href*='list.php?s=']")).map(function (el) {
+      return el.textContent ? el.textContent.trim() : '';
+    }).filter(Boolean);
+  }
+
+  function findRenderedBookId() {
+    var input = document.querySelector('input[name="bookid"]') ||
+      document.querySelector('input[name="push_bookid"]') ||
+      document.querySelector('input[name="follow_bookid"]');
+    if (input && input.value) return input.value;
+
+    var match = window.location.pathname.match(/\/c\/(\d+)\.htm/i);
+    return match ? match[1] : '';
+  }
+
+  function findChapterSize(row, volId) {
+    var input = row && row.querySelector('input[name="size_down_' + volId + '"]');
+    if (!input) {
+      input = document.querySelector('input[name="size_down_' + volId + '"]');
+    }
+
+    var size = input && input.value ? parseFloat(input.value) : null;
+    return size && size > 0 ? size : null;
+  }
+
+  function collectBookInfoFromDocument() {
+    var bookId = findRenderedBookId();
+    if (!bookId) return null;
+
+    var chapterInputs = Array.from(document.querySelectorAll('input[name="checkbox_vol"]'));
+    var chapters = [];
+
+    chapterInputs.forEach(function (input) {
+      var volId = input.value;
+      if (!volId) return;
+
+      var row = input.closest ? input.closest('tr') : null;
+      var nameNode = row ? row.querySelector('b') : null;
+      var name = nameNode && nameNode.textContent ? nameNode.textContent.trim() : '';
+      var size = findChapterSize(row, volId);
+
+      chapters.push({
+        id: volId,
+        category: '章节',
+        name: name || '第' + (chapters.length + 1) + '章',
+        mobiSize: size,
+        epubSize: size
+      });
+    });
+
+    if (!chapters.length) return null;
+
+    var coverNode = document.querySelector('.img_book');
+    return {
+      bookId: bookId,
+      arr: chapters,
+      title: getTrimmedText('.text_bglight_big') || document.title,
+      cover: coverNode && coverNode.src ? coverNode.src : '',
+      author: collectAuthorNames(),
+      downPrefix: '/dl/' + bookId + '/',
+      downSuffix: '/0/',
+      downloadOrigin: window.location.origin,
+      fileFormat: null,
+      quotaAvailable: null,
+      quotaUsed: null
+    };
+  }
+
   function normalizeDownloadFormat(format) {
     return format === '2' ? '2' : DEFAULT_DOWNLOAD_FORMAT;
   }
@@ -237,8 +329,11 @@
 
   function createCard() {
     if (!cachedBookInfo) {
-      alert('数据加载中，请稍后再试');
-      return null;
+      cachedBookInfo = collectBookInfoFromDocument();
+      if (!cachedBookInfo) {
+        alert('数据加载中，请稍后再试');
+        return null;
+      }
     }
 
     const bookInfo = cachedBookInfo;
