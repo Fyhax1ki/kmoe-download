@@ -43,9 +43,24 @@
     if (event.source !== window) return;
     var payload = parseBridgePayload(event.data);
     if (payload) {
-      cachedBookInfo = payload;
+      cachedBookInfo = mergeBookInfo(cachedBookInfo, payload);
+      refreshCardBookInfo(cachedBookInfo);
     }
   });
+
+  function mergeBookInfo(existing, incoming) {
+    if (!incoming) return existing || null;
+    if (!existing || (existing.bookId && incoming.bookId && String(existing.bookId) !== String(incoming.bookId))) {
+      return incoming;
+    }
+
+    Object.keys(incoming).forEach(function (key) {
+      if (typeof incoming[key] !== 'undefined') {
+        existing[key] = incoming[key];
+      }
+    });
+    return existing;
+  }
 
   function loadDownloadRecords(callback) {
     chrome.storage.local.get(['kmoe_download_records_v2'], function (result) {
@@ -93,6 +108,7 @@
       downloadRecords[bookId] = {
         title: meta.title || (cachedBookInfo ? cachedBookInfo.title : ''),
         cover: meta.cover || (cachedBookInfo ? cachedBookInfo.cover : ''),
+        description: meta.description || (cachedBookInfo ? cachedBookInfo.description : ''),
         url: meta.url || window.location.href,
         volumes: {}
       };
@@ -102,6 +118,9 @@
       }
       if (!downloadRecords[bookId].cover && meta.cover) {
         downloadRecords[bookId].cover = meta.cover;
+      }
+      if (!downloadRecords[bookId].description && meta.description) {
+        downloadRecords[bookId].description = meta.description;
       }
       if (!downloadRecords[bookId].url && meta.url) {
         downloadRecords[bookId].url = meta.url;
@@ -129,6 +148,7 @@
     addDownloadRecord(item.bookId, item.volId, item.format, item.volName, {
       title: item.bookTitle || '',
       cover: item.bookCover || '',
+      description: item.bookDescription || '',
       url: item.pageUrl || window.location.href
     });
     item.downloadRecordSaved = true;
@@ -236,6 +256,93 @@
     return sizeMb.toFixed(1) + 'MB';
   }
 
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, function (ch) {
+      return {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[ch];
+    });
+  }
+
+  function normalizeQuotaAvailable(bookInfo) {
+    if (!bookInfo || bookInfo.quotaAvailable === null || typeof bookInfo.quotaAvailable === 'undefined') {
+      return null;
+    }
+    var quotaAvailable = Number(bookInfo.quotaAvailable);
+    return Number.isFinite(quotaAvailable) ? quotaAvailable : null;
+  }
+
+  function getChapterDownloadSize(chapter, format) {
+    if (!chapter) return 0;
+    var size = format === '1' ? chapter.mobiSize : chapter.epubSize;
+    size = Number(size);
+    return Number.isFinite(size) && size > 0 ? size : 0;
+  }
+
+  function calculateSelectedDownloadSize(bookInfo, selected, format, downloadedChecker) {
+    var totalSize = 0;
+    var chapters = bookInfo && Array.isArray(bookInfo.arr) ? bookInfo.arr : [];
+    var checker = downloadedChecker || isDownloaded;
+    var bookId = bookInfo && bookInfo.bookId ? bookInfo.bookId : '';
+
+    selected.forEach(function (chapter) {
+      var chapterData = chapters[chapter.index];
+      if (!chapterData) return;
+      if (checker(bookId, chapterData.id, format)) return;
+      totalSize += getChapterDownloadSize(chapterData, format);
+    });
+
+    return totalSize;
+  }
+
+  function validateDownloadQuota(bookInfo, selected, format, downloadedChecker) {
+    var selectedSize = calculateSelectedDownloadSize(bookInfo, selected, format, downloadedChecker);
+    var quotaAvailable = normalizeQuotaAvailable(bookInfo);
+
+    if (quotaAvailable !== null && selectedSize > quotaAvailable + 0.5) {
+      return {
+        ok: false,
+        selectedSize: selectedSize,
+        quotaAvailable: quotaAvailable,
+        reason: '额度不足'
+      };
+    }
+
+    return {
+      ok: true,
+      selectedSize: selectedSize,
+      quotaAvailable: quotaAvailable,
+      reason: ''
+    };
+  }
+
+  function getQuotaDisplayText(bookInfo) {
+    var quotaAvailable = normalizeQuotaAvailable(bookInfo);
+    return quotaAvailable === null ? '' : '可用额度: ' + formatQuotaSize(quotaAvailable);
+  }
+
+  function updateQuotaInfoElement(card, bookInfo) {
+    if (!card) return;
+    var quotaEls = card.querySelectorAll('.kmoe-quota-info');
+    if (!quotaEls.length) return;
+    var quotaText = getQuotaDisplayText(bookInfo);
+    quotaEls.forEach(function (quotaEl) {
+      quotaEl.textContent = quotaText;
+      quotaEl.style.display = quotaText ? '' : 'none';
+    });
+  }
+
+  function refreshCardBookInfo(bookInfo) {
+    var card = document.getElementById('kmoe-download-card');
+    if (!card || !bookInfo) return;
+    updateQuotaInfoElement(card, bookInfo);
+    updateSelectionInfo(bookInfo);
+  }
+
   function getTrimmedText(selector) {
     var node = document.querySelector(selector);
     return node && node.textContent ? node.textContent.trim() : '';
@@ -243,8 +350,61 @@
 
   function collectAuthorNames() {
     return Array.from(document.querySelectorAll("a[href*='list.php?s=']")).map(function (el) {
+      if (el.closest && el.closest('#txt_recbook')) return '';
       return el.textContent ? el.textContent.trim() : '';
     }).filter(Boolean);
+  }
+
+  function collectDescriptionText() {
+    var node = document.querySelector('#div_desc_content');
+    if (!node) return '';
+    if (node.childNodes && node.childNodes.length) {
+      return Array.from(node.childNodes).map(function (child) {
+        if (child.nodeType === 3) return child.textContent || '';
+        if (child.nodeType === 1 && String(child.tagName || '').toUpperCase() === 'BR') return '\n';
+        return '';
+      }).join('').replace(/\s+\n/g, '\n').replace(/\n\s+/g, '\n').trim();
+    }
+    var text = typeof node.innerText === 'string' ? node.innerText : node.textContent;
+    return text ? text.trim() : '';
+  }
+
+  function parseModuleLiteral(raw) {
+    if (typeof raw !== 'string') return undefined;
+    raw = raw.trim();
+    if ((raw[0] === '"' && raw[raw.length - 1] === '"') || (raw[0] === "'" && raw[raw.length - 1] === "'")) {
+      return raw.slice(1, -1);
+    }
+    if (/^-?\d+(?:\.\d+)?$/.test(raw)) return Number(raw);
+    return undefined;
+  }
+
+  function findModuleVariable(name) {
+    var scripts = Array.from(document.querySelectorAll('script[type="module"]'));
+    var pattern = new RegExp('(?:var|let|const)\\s+' + name + '\\s*=\\s*([^;]+)');
+    for (var i = 0; i < scripts.length; i++) {
+      var text = scripts[i].textContent || '';
+      var match = text.match(pattern);
+      if (match) {
+        return parseModuleLiteral(match[1]);
+      }
+    }
+    return undefined;
+  }
+
+  function collectModuleFallbackInfo() {
+    var quotaAvailable = findModuleVariable('quota_now');
+    var quotaUsed = findModuleVariable('quota_used');
+    var downloadOrigin = findModuleVariable('str_urldomain') ||
+      findModuleVariable('down_domain') ||
+      findModuleVariable('str_down_domain') ||
+      findModuleVariable('str_down_host');
+
+    return {
+      quotaAvailable: typeof quotaAvailable === 'undefined' ? null : Number(quotaAvailable),
+      quotaUsed: typeof quotaUsed === 'undefined' ? null : Number(quotaUsed),
+      downloadOrigin: downloadOrigin || window.location.origin
+    };
   }
 
   function findRenderedBookId() {
@@ -295,18 +455,20 @@
     if (!chapters.length) return null;
 
     var coverNode = document.querySelector('.img_book');
+    var moduleInfo = collectModuleFallbackInfo();
     return {
       bookId: bookId,
       arr: chapters,
       title: getTrimmedText('.text_bglight_big') || document.title,
       cover: coverNode && coverNode.src ? coverNode.src : '',
+      description: collectDescriptionText(),
       author: collectAuthorNames(),
       downPrefix: '/dl/' + bookId + '/',
       downSuffix: '/0/',
-      downloadOrigin: window.location.origin,
+      downloadOrigin: moduleInfo.downloadOrigin,
       fileFormat: null,
-      quotaAvailable: null,
-      quotaUsed: null
+      quotaAvailable: moduleInfo.quotaAvailable,
+      quotaUsed: moduleInfo.quotaUsed
     };
   }
 
@@ -337,7 +499,7 @@
     }
 
     const bookInfo = cachedBookInfo;
-    const quotaText = bookInfo.quotaAvailable !== null ? '可用额度: ' + formatQuotaSize(bookInfo.quotaAvailable) : '';
+    const quotaText = getQuotaDisplayText(bookInfo);
     const initialFormat = getPreferredDownloadFormat();
     const card = document.createElement('div');
     card.id = 'kmoe-download-card';
@@ -350,8 +512,9 @@
       '<div class="kmoe-book-info">' +
       '<img class="kmoe-book-cover" src="' + bookInfo.cover + '" alt="cover">' +
       '<div class="kmoe-book-meta">' +
-      '<div class="kmoe-book-title">' + bookInfo.title + '</div>' +
-      '<div class="kmoe-book-author">' + (bookInfo.author.join(', ') || '未知作者') + '</div>' +
+      '<div class="kmoe-book-title">' + escapeHtml(bookInfo.title) + '</div>' +
+      '<div class="kmoe-book-author">' + escapeHtml(bookInfo.author.join(', ') || '未知作者') + '</div>' +
+      '<div class="kmoe-book-description" title="' + escapeHtml(bookInfo.description || '') + '">' + escapeHtml(bookInfo.description || '') + '</div>' +
       '</div>' +
       '</div>' +
       '<div class="kmoe-format-select">' +
@@ -360,14 +523,16 @@
       '<option value="1">MOBI</option>' +
       '<option value="2">EPUB</option>' +
       '</select>' +
-      (quotaText ? '<span class="kmoe-quota-info">' + quotaText + '</span>' : '') +
       '</div>' +
       '<div class="kmoe-chapter-header">' +
       '<label class="kmoe-select-all">' +
       '<input type="checkbox" id="kmoe-select-all" checked>' +
       '<span>全选</span>' +
       '</label>' +
+      '<div class="kmoe-chapter-summary">' +
+      '<span class="kmoe-quota-info"' + (quotaText ? '' : ' style="display:none"') + '>' + quotaText + '</span>' +
       '<span class="kmoe-chapter-count">已选 <span id="kmoe-selected-count">' + bookInfo.arr.length + '</span> / ' + bookInfo.arr.length + ' 章</span>' +
+      '</div>' +
       '</div>' +
       '<div class="kmoe-chapter-list" id="kmoe-chapter-list">' +
       renderChapterList(bookInfo.arr, initialFormat, bookInfo.bookId) +
@@ -385,6 +550,7 @@
     if (formatSelect) {
       formatSelect.value = initialFormat;
     }
+    updateQuotaInfoElement(card, bookInfo);
 
     card.querySelector('.kmoe-card-close').addEventListener('click', hideCard);
     makePanelDraggable(card, card.querySelector('.kmoe-card-header'));
@@ -464,19 +630,12 @@
       countEl.textContent = checkboxes.length;
     }
 
-    var totalSize = 0;
-    checkboxes.forEach(function (cb) {
-      var index = parseInt(cb.dataset.index);
-      var item = bookInfo.arr[index];
-      if (item) {
-        var volId = item.id;
-        var downloaded = isDownloaded(bookInfo.bookId, volId, format);
-        if (!downloaded) {
-          var size = format === '1' ? item.mobiSize : item.epubSize;
-          if (size) totalSize += size;
-        }
-      }
+    var selected = Array.from(checkboxes).map(function (cb) {
+      return {
+        index: parseInt(cb.dataset.index)
+      };
     });
+    var totalSize = calculateSelectedDownloadSize(bookInfo, selected, format);
 
     var sizeEl = card.querySelector('#kmoe-selected-size');
     if (sizeEl) {
@@ -485,18 +644,10 @@
 
     var downloadBtn = card.querySelector('#kmoe-start-download');
     if (downloadBtn) {
-      var quotaAvailable = bookInfo.quotaAvailable;
-      if (quotaAvailable !== null && totalSize > quotaAvailable + 0.5) {
-        downloadBtn.disabled = true;
-        downloadBtn.classList.add('kmoe-download-btn-disabled');
-        downloadBtn.textContent = '额度不足';
-        downloadBtn.title = '选中大小超过可用额度';
-      } else {
-        downloadBtn.disabled = false;
-        downloadBtn.classList.remove('kmoe-download-btn-disabled');
-        downloadBtn.textContent = '开始下载';
-        downloadBtn.title = '';
-      }
+      downloadBtn.disabled = false;
+      downloadBtn.classList.remove('kmoe-download-btn-disabled');
+      downloadBtn.textContent = '开始下载';
+      downloadBtn.title = '';
     }
   }
 
@@ -859,17 +1010,8 @@
     if (bodyEl) {
       var html = '';
       downloadQueue.forEach(function (item, index) {
-        if (item.status === 1) {
-          var percent = item.progress || 0;
-          var speed = item.speed ? formatSpeed(item.speed) : '';
-          var info = item.statusText || (item.status === 0 ? '等待后台下载' : (percent + '% ' + speed));
-          html += '<div class="kmoe-progress-item">' +
-            '<div class="kmoe-progress-name">' + item.filename + '</div>';
-          html += '<div class="kmoe-progress-bar">' +
-            '<div class="kmoe-progress-fill" style="width:' + percent + '%"></div>' +
-            '</div>' +
-            '<div class="kmoe-progress-info">' + info + '</div>';
-          html += '</div>';
+        if (item.status === 1 || item.status === 3) {
+          html += renderProgressItem(item);
         }
       });
       bodyEl.innerHTML = html;
@@ -882,6 +1024,42 @@
     } else {
       return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
     }
+  }
+
+  function formatFailureReason(err) {
+    if (err === 429 || String(err) === '429') return '请求过于频繁，请稍后重试';
+    var reason = err ? String(err) : '下载失败';
+    var lower = reason.toLowerCase();
+
+    if (lower === 'network' || lower.indexOf('network') >= 0 || lower.indexOf('failed to fetch') >= 0) {
+      return '网络连接失败';
+    }
+    if (lower === 'timeout' || lower.indexOf('timeout') >= 0) {
+      return '网络超时';
+    }
+    if (lower.indexOf('connection refused') >= 0 || lower.indexOf('econnrefused') >= 0) {
+      return '连接失败';
+    }
+
+    return reason;
+  }
+
+  function renderProgressItem(item) {
+    var isFailed = item.status === 3;
+    var percent = item.progress || 0;
+    var speed = item.speed ? formatSpeed(item.speed) : '';
+    var info = isFailed
+      ? '失败：' + (item.statusText || '下载失败')
+      : (item.statusText || (item.status === 0 ? '等待后台下载' : (percent + '% ' + speed)));
+    var itemClass = 'kmoe-progress-item' + (isFailed ? ' kmoe-progress-item-failed' : '');
+
+    return '<div class="' + itemClass + '">' +
+      '<div class="kmoe-progress-name">' + escapeHtml(item.filename) + '</div>' +
+      '<div class="kmoe-progress-bar">' +
+      '<div class="kmoe-progress-fill" style="width:' + percent + '%"></div>' +
+      '</div>' +
+      '<div class="kmoe-progress-info">' + escapeHtml(info) + '</div>' +
+      '</div>';
   }
 
   function downloadRefresh() {
@@ -907,23 +1085,52 @@
         return;
       }
 
-      var url;
-      if (rsp && rsp.url) {
-        url = rsp.url;
-        if (rsp.name) {
-          item.filename = sanitizeFilename(rsp.name);
-          item.downloadPath = buildDownloadPath(item.downloadDir, item.filename);
-        }
-      } else if (item.downPrefix && item.downSuffix) {
-        url = item.downloadOrigin + item.downPrefix + item.volId + '/' + item.format + item.downSuffix;
-      } else {
-        url = item.downloadOrigin + '/dl/' + item.bookId + '/' + item.volId + '/' + item.format + '/0/';
+      var result = resolveDownloadUrlResponse(item, rsp);
+      if (!result.ok) {
+        callback(result);
+        return;
       }
-
-      item.url = url;
       saveResolvedDownloadRecord(item);
       callback(item);
     });
+  }
+
+  function getDownloadUrlErrorMessage(rsp) {
+    if (!rsp || typeof rsp !== 'object') return '下载链接解析失败';
+    var fields = ['msg', 'message', 'error', 'errmsg', 'reason', 'info'];
+    for (var i = 0; i < fields.length; i++) {
+      var value = rsp[fields[i]];
+      if (value) return String(value);
+    }
+    return '下载链接解析失败';
+  }
+
+  function resolveDownloadUrlResponse(item, rsp) {
+    if (!rsp) {
+      return {
+        ok: false,
+        retryable: true,
+        error: '下载链接解析失败'
+      };
+    }
+
+    if (!rsp.url) {
+      return {
+        ok: false,
+        retryable: false,
+        error: getDownloadUrlErrorMessage(rsp)
+      };
+    }
+
+    item.url = rsp.url;
+    if (rsp.name) {
+      item.filename = sanitizeFilename(rsp.name);
+      item.downloadPath = buildDownloadPath(item.downloadDir, item.filename);
+    }
+    return {
+      ok: true,
+      item: item
+    };
   }
 
   function finishDownloadItem(item) {
@@ -944,8 +1151,9 @@
     updateProgressPanel();
   }
 
-  function failDownloadItem(item, err) {
+  function failDownloadItem(item, err, options) {
     if (downloadCancelled || item.status === 4) return;
+    options = options || {};
     if (item.gid) {
       delete activeAria2Downloads[item.gid];
       if (activeAria2PollTimers[item.gid]) {
@@ -956,13 +1164,17 @@
     }
 
     item.retryCount = item.retryCount || 0;
-    if (item.retryCount < maxRetry) {
+    var reason = formatFailureReason(err);
+    if (options.retryable === false) {
+      item.status = 3;
+      item.statusText = reason;
+    } else if (item.retryCount < maxRetry) {
       item.retryCount++;
       item.status = 0;
-      item.statusText = '';
+      item.statusText = '等待重试：' + reason;
     } else {
       item.status = 3;
-      item.statusText = err ? String(err) : '失败';
+      item.statusText = reason;
     }
 
     downloading--;
@@ -1085,8 +1297,11 @@
 
   function startDownloadItem(item, index) {
     resolveDownloadUrl(item, function (resolvedItem) {
-      if (!resolvedItem) {
-        failDownloadItem(item, '下载链接解析失败');
+      if (!resolvedItem || resolvedItem.ok === false) {
+        var errorReason = resolvedItem && resolvedItem.error ? resolvedItem.error : '下载链接解析失败';
+        failDownloadItem(item, errorReason, {
+          retryable: resolvedItem ? resolvedItem.retryable !== false : true
+        });
         return;
       }
       if (downloadMode === 'aria2') {
@@ -1145,6 +1360,7 @@
         bookId: bookInfo.bookId,
         bookTitle: bookInfo.title || '',
         bookCover: bookInfo.cover || '',
+        bookDescription: bookInfo.description || '',
         pageUrl: window.location.href,
         volId: chapterData.id,
         volName: chapterName,
@@ -1235,6 +1451,17 @@
     document.addEventListener('DOMContentLoaded', observeDOM);
   } else {
     observeDOM();
+  }
+
+  if (window.__KMOE_DOWNLOAD_TEST__) {
+    window.__kmoeTestHooks = {
+      mergeBookInfo: mergeBookInfo,
+      validateDownloadQuota: validateDownloadQuota,
+      getQuotaDisplayText: getQuotaDisplayText,
+      formatFailureReason: formatFailureReason,
+      renderProgressItem: renderProgressItem,
+      resolveDownloadUrlResponse: resolveDownloadUrlResponse
+    };
   }
 })();
 

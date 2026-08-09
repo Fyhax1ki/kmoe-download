@@ -334,6 +334,20 @@
     });
   }
 
+  function collectDescriptionText() {
+    const node = document.querySelector("#div_desc_content");
+    if (!node) return "";
+    if (node.childNodes && node.childNodes.length) {
+      return Array.from(node.childNodes).map(function(child) {
+        if (child.nodeType === 3) return child.textContent || "";
+        if (child.nodeType === 1 && String(child.tagName || "").toUpperCase() === "BR") return "\n";
+        return "";
+      }).join("").replace(/\s+\n/g, "\n").replace(/\n\s+/g, "\n").trim();
+    }
+    const text = typeof node.innerText === "string" ? node.innerText : node.textContent;
+    return text ? text.trim() : "";
+  }
+
   function getPageData() {
     if (Array.isArray(window.arr_voldata) && window.arr_voldata.length && window.bookid) {
       return {
@@ -358,13 +372,18 @@
     }
 
     const arr = mapVolumeData(pageData.arr);
+    const description = collectDescriptionText();
 
     const payload = {
       bookId: pageData.bookId,
       arr: arr,
       title: document.querySelector(".text_bglight_big")?.textContent?.trim() || document.title,
       cover: document.querySelector(".img_book")?.src || "",
-      author: Array.from(document.querySelectorAll("a[href*='list.php?s=']")).map((el) => el.textContent?.trim()).filter(Boolean),
+      description: description,
+      author: Array.from(document.querySelectorAll("a[href*='list.php?s=']")).map((el) => {
+        if (el.closest && el.closest("#txt_recbook")) return "";
+        return el.textContent?.trim();
+      }).filter(Boolean),
       downPrefix: pageData.downPrefix || `/dl/${pageData.bookId}/`,
       downSuffix: pageData.downSuffix || "/0/",
       downloadOrigin: pageData.downloadOrigin || window.location.origin,
@@ -379,7 +398,15 @@
     force = force || false;
     const payload = collectData();
     if (!payload) return;
-    const key = payload.bookId + '-' + payload.arr.length;
+    const key = [
+      payload.bookId,
+      payload.arr.length,
+      payload.title || "",
+      payload.cover || "",
+      payload.description || "",
+      payload.quotaAvailable === null ? "quota:null" : "quota:" + payload.quotaAvailable,
+      payload.quotaUsed === null ? "used:null" : "used:" + payload.quotaUsed
+    ].join("|");
     if (!force && key === lastPayloadKey) return;
     lastPayloadKey = key;
     window.postMessage(MESSAGE_PREFIX + JSON.stringify(payload), '*');

@@ -78,6 +78,7 @@ function renderBookList() {
         id: bookId,
         title: book.title || '未知漫画',
         cover: book.cover || '',
+        description: book.description || '',
         url: book.url || '',
         volumes: volumes
       });
@@ -225,6 +226,11 @@ function mergeHistory(existing, imported) {
     if (!merged[bookId]) {
       merged[bookId] = book;
     } else {
+      ['title', 'cover', 'description', 'url'].forEach(function(field) {
+        if (!merged[bookId][field] && book[field]) {
+          merged[bookId][field] = book[field];
+        }
+      });
       if (book.volumes) {
         if (!merged[bookId].volumes) {
           merged[bookId].volumes = {};
