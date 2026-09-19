@@ -30,8 +30,8 @@ git clone https://github.com/Fyhax1ki/kmoe-download.git
 
 1. 打开已适配的漫画详情页
 2. 等待页面内容加载完成
-3. 点击页面上的 `Kmoe-Download`
-4. 选择文件格式、章节和下载参数
+3. 点击页面右侧悬浮入口中的 `MOBI` 或 `EPUB`
+4. 选择章节和下载参数
 5. 点击“开始下载”
 6. 通过扩展弹窗查看或管理下载历史
 

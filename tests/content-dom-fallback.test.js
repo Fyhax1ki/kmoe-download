@@ -5,7 +5,7 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 function createNode(props) {
-  return Object.assign({
+  const node = Object.assign({
     textContent: '',
     value: '',
     src: '',
@@ -13,7 +13,18 @@ function createNode(props) {
     dataset: {},
     children: [],
     appendChild(child) {
+      child.parentNode = this;
       this.children.push(child);
+      return child;
+    },
+    insertBefore(child, referenceNode) {
+      child.parentNode = this;
+      const index = this.children.indexOf(referenceNode);
+      if (index === -1) {
+        this.children.push(child);
+      } else {
+        this.children.splice(index, 0, child);
+      }
       return child;
     },
     removeChild(child) {
@@ -21,7 +32,14 @@ function createNode(props) {
       return child;
     },
     remove() {},
-    addEventListener() {},
+    addEventListener(type, handler) {
+      this.listeners = this.listeners || {};
+      this.listeners[type] = this.listeners[type] || [];
+      this.listeners[type].push(handler);
+    },
+    dispatchEvent(type, event) {
+      (this.listeners && this.listeners[type] || []).forEach((handler) => handler(event));
+    },
     querySelector() {
       return null;
     },
@@ -35,6 +53,45 @@ function createNode(props) {
       return null;
     }
   }, props || {});
+
+  node.classList = {
+    _set: new Set(String(node.className || '').split(/\s+/).filter(Boolean)),
+    toggle(name, force) {
+      if (force === true) this._set.add(name);
+      else if (force === false) this._set.delete(name);
+      else if (this._set.has(name)) this._set.delete(name);
+      else this._set.add(name);
+      node.className = Array.from(this._set).join(' ');
+    },
+    add(name) {
+      this._set.add(name);
+      node.className = Array.from(this._set).join(' ');
+    },
+    remove(name) {
+      this._set.delete(name);
+      node.className = Array.from(this._set).join(' ');
+    },
+    contains(name) {
+      return this._set.has(name);
+    }
+  };
+  node.setAttribute = function(name, value) {
+    this.attrs = this.attrs || {};
+    this.attrs[name] = String(value);
+    if (name === 'aria-label') this.ariaLabel = String(value);
+    if (name === 'aria-expanded') this.ariaExpanded = String(value);
+  };
+  node.getAttribute = function(name) {
+    return (this.attrs && this.attrs[name]) || null;
+  };
+  node.offsetWidth = node.offsetWidth || 34;
+  node.offsetHeight = node.offsetHeight || 28;
+  node.getBoundingClientRect = node.getBoundingClientRect || function() {
+    const left = parseFloat(this.style.left) || 0;
+    const top = parseFloat(this.style.top) || 0;
+    return { left, top, right: left + this.offsetWidth, bottom: top + this.offsetHeight, width: this.offsetWidth, height: this.offsetHeight };
+  };
+  return node;
 }
 
 function createContentContext() {
@@ -99,6 +156,7 @@ function createContentContext() {
     Object,
     String,
     Set,
+    Math,
     parseFloat,
     parseInt,
     setTimeout,
@@ -110,8 +168,22 @@ function createContentContext() {
     window: {
       __KMOE_DOWNLOAD_TEST__: true,
       location: { href: 'https://bookof.moe/b/b5eddd.htm', origin: 'https://bookof.moe' },
+      innerWidth: 1280,
+      innerHeight: 800,
+      localStorage: {
+        _data: {},
+        getItem(key) {
+          return Object.prototype.hasOwnProperty.call(this._data, key) ? this._data[key] : null;
+        },
+        setItem(key, value) {
+          this._data[key] = String(value);
+        }
+      },
       addEventListener(type, handler) {
         if (type === 'message') messageListener = handler;
+        this.listeners = this.listeners || {};
+        this.listeners[type] = this.listeners[type] || [];
+        this.listeners[type].push(handler);
       }
     },
     document: {
@@ -226,4 +298,87 @@ test('content script caches bridge payload sent as a string message', () => {
   assert.equal(cached.bookId, '31299');
   assert.equal(cached.arr.length, 1);
   assert.equal(cached.downloadOrigin, 'https://kzo.moe');
+});
+
+test('content script injects a floating entry with mobi and epub actions', () => {
+  const context = createContentContext();
+  context.document.readyState = 'complete';
+  context.document.createElement = function(tagName) {
+    return createNode({ tagName: String(tagName).toUpperCase() });
+  };
+  context.document.getElementById = function(id) {
+    if (id === 'kmoe-download-floating') {
+      return context.document.body.children.find((child) => child.id === id) || null;
+    }
+    return null;
+  };
+
+  loadContentScript(context);
+
+  const launcher = context.document.body.children.find((child) => child.id === 'kmoe-download-floating');
+  assert.ok(launcher);
+  assert.equal(launcher.children[0].children[0].textContent, 'K');
+  assert.equal(launcher.children[0].children[1].textContent, 'Batch DL');
+  assert.deepEqual(launcher.children[1].children.map((child) => child.textContent), ['MOBI', 'EPUB']);
+  assert.deepEqual(launcher.children[1].children.map((child) => child.dataset.format), ['1', '2']);
+});
+
+test('floating entry drag saves position without opening formats', () => {
+  const context = createContentContext();
+  context.document.readyState = 'complete';
+  context.document.createElement = function(tagName) {
+    return createNode({ tagName: String(tagName).toUpperCase() });
+  };
+  context.document.getElementById = function(id) {
+    if (id === 'kmoe-download-floating') {
+      return context.document.body.children.find((child) => child.id === id) || null;
+    }
+    return null;
+  };
+
+  loadContentScript(context);
+
+  const launcher = context.document.body.children.find((child) => child.id === 'kmoe-download-floating');
+
+  launcher.dispatchEvent('pointerdown', { button: 0, pointerId: 1, clientX: 1200, clientY: 300, preventDefault() {} });
+  launcher.dispatchEvent('pointermove', { pointerId: 1, clientX: 200, clientY: 120, preventDefault() {} });
+  launcher.dispatchEvent('pointerup', { pointerId: 1, preventDefault() {} });
+
+  assert.equal(launcher.style.left, '230px');
+  assert.equal(launcher.style.top, '124px');
+  assert.equal(context.window.localStorage.getItem('kmoe_floating_entry_pos'), JSON.stringify({ left: 230, top: 124 }));
+  assert.equal(context.window.__kmoeTestHooks.getFloatingSuppressClick(), true);
+});
+
+test('floating format click is not swallowed by a press without dragging', () => {
+  const context = createContentContext();
+  context.document.readyState = 'complete';
+  context.document.createElement = function(tagName) {
+    return createNode({ tagName: String(tagName).toUpperCase() });
+  };
+  context.document.getElementById = function(id) {
+    if (id === 'kmoe-download-floating') {
+      return context.document.body.children.find((child) => child.id === id) || null;
+    }
+    return null;
+  };
+
+  loadContentScript(context);
+
+  const launcher = context.document.body.children.find((child) => child.id === 'kmoe-download-floating');
+  const mobiBtn = launcher.children[1].children[0];
+  let opened = false;
+  const originalClick = mobiBtn.listeners.click[0];
+  mobiBtn.listeners.click[0] = function(event) {
+    event.preventDefault();
+    if (context.window.__kmoeTestHooks.getFloatingSuppressClick()) return;
+    opened = true;
+  };
+
+  launcher.dispatchEvent('pointerdown', { button: 0, pointerId: 1, clientX: 100, clientY: 100, preventDefault() {} });
+  launcher.dispatchEvent('pointerup', { pointerId: 1, preventDefault() {} });
+  assert.equal(context.window.__kmoeTestHooks.getFloatingSuppressClick(), false);
+  mobiBtn.dispatchEvent('click', { preventDefault() {} });
+  assert.equal(opened, true);
+  originalClick;
 });

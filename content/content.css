@@ -14,6 +14,116 @@
   overflow: hidden;
 }
 
+#kmoe-download-floating {
+  position: fixed;
+  right: 16px;
+  top: 38%;
+  z-index: 999997;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 92px;
+  padding: 7px;
+  background: #20262e;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  box-shadow: 0 8px 20px rgba(17, 24, 39, 0.22);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  box-sizing: border-box;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.kmoe-floating-title {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #f8fafc;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.kmoe-floating-mark {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 20px;
+  color: #20262e;
+  background: #f7c948;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.16);
+}
+
+.kmoe-floating-title-text {
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.kmoe-floating-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kmoe-floating-format-btn {
+  width: 100%;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 5px;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: none;
+  transition: transform 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.kmoe-floating-format-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+
+.kmoe-floating-format-btn:active {
+  transform: translateY(0);
+}
+
+.kmoe-floating-format-mobi {
+  background: #2f6fbe;
+}
+
+.kmoe-floating-format-mobi:hover {
+  background: #387ed4;
+}
+
+.kmoe-floating-format-epub {
+  background: #16805f;
+}
+
+.kmoe-floating-format-epub:hover {
+  background: #1a9370;
+}
+
+#kmoe-download-floating.is-dragging,
+#kmoe-download-floating.is-dragging .kmoe-floating-format-btn {
+  cursor: grabbing;
+}
+
 .kmoe-card-header {
   display: flex;
   justify-content: space-between;

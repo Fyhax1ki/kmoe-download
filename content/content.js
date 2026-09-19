@@ -8,10 +8,12 @@
   const DOWNLOAD_REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
   const DOWNLOAD_STALL_TIMEOUT_MS = 90000;
   const Settings = globalThis.KmoeSettings;
-  let cardVisible = false;
+  const FLOATING_POS_KEY = 'kmoe_floating_entry_pos';
+  const FLOATING_DRAG_THRESHOLD_PX = 5;
   let cachedBookInfo = null;
   var downloadRecords = {};
   var preferredDownloadFormat = Settings.DEFAULT_DOWNLOAD_FORMAT;
+  var floatingSuppressClick = false;
 
   function injectPageBridge() {
     const script = document.createElement('script');
@@ -162,37 +164,223 @@
     return (now - vol.formats[format]) <= expireTime;
   }
 
+  function queryFirst(selectors) {
+    for (var i = 0; i < selectors.length; i++) {
+      var node = document.querySelector(selectors[i]);
+      if (node) return node;
+    }
+    return null;
+  }
+
+  function findDownloadButtonAnchor() {
+    return document.getElementById('bt_down_all_1_mobi') ||
+      document.getElementById('bt_down_all_1_epub') ||
+      queryFirst([
+        '[id^="bt_down_all_"]',
+        '[id*="down_all"][id*="mobi"]',
+        '[id*="down_all"][id*="epub"]',
+        'button[onclick*="down_all"]',
+        'input[onclick*="down_all"]',
+        'a[onclick*="down_all"]'
+      ]);
+  }
+
+  function findChapterCheckboxAnchor() {
+    return document.getElementById('checkbox_all_1001') ||
+      queryFirst([
+        'input[type="checkbox"][id^="checkbox_all_"]',
+        'input[name="checkbox_all"]',
+        'input[type="checkbox"][name="checkbox_vol"]'
+      ]);
+  }
+
+  function shouldShowFloatingDownloadEntry() {
+    return !!(findDownloadButtonAnchor() || findChapterCheckboxAnchor() || findRenderedBookId());
+  }
+
+  function createFloatingFormatButton(format, label) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'kmoe-floating-format-btn kmoe-floating-format-' + label.toLowerCase();
+    button.textContent = label;
+    button.title = '下载 ' + label;
+    button.dataset.format = format;
+    button.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (floatingSuppressClick) return;
+      openCardWithFormat(format);
+    });
+    return button;
+  }
+
   function createDownloadButton() {
-    var mobiBtn = document.getElementById('bt_down_all_1_mobi');
-    var epubBtn = document.getElementById('bt_down_all_1_epub');
+    if (document.getElementById('kmoe-download-floating')) return true;
+    if (!shouldShowFloatingDownloadEntry()) return false;
 
-    if (mobiBtn && !mobiBtn.parentNode.querySelector('.kmoe-download-btn')) {
-      var mobiDownloadBtn = document.createElement('button');
-      mobiDownloadBtn.type = 'button';
-      mobiDownloadBtn.textContent = 'Kmoe-Download';
-      mobiDownloadBtn.className = 'bt_sml_defa kmoe-download-btn';
-      mobiDownloadBtn.style.cssText = 'width:120px;margin-right:4px;';
-      mobiDownloadBtn.addEventListener('click', function (e) {
-        e.preventDefault();
-        toggleCard();
-      });
-      mobiBtn.parentNode.insertBefore(mobiDownloadBtn, mobiBtn);
+    var launcher = document.createElement('div');
+    launcher.id = 'kmoe-download-floating';
+
+    var title = document.createElement('div');
+    title.className = 'kmoe-floating-title';
+    var mark = document.createElement('span');
+    mark.className = 'kmoe-floating-mark';
+    mark.textContent = 'K';
+    title.appendChild(mark);
+    var titleText = document.createElement('span');
+    titleText.className = 'kmoe-floating-title-text';
+    titleText.textContent = 'Batch DL';
+    title.appendChild(titleText);
+    launcher.appendChild(title);
+
+    var actions = document.createElement('div');
+    actions.className = 'kmoe-floating-actions';
+    actions.appendChild(createFloatingFormatButton('1', 'MOBI'));
+    actions.appendChild(createFloatingFormatButton('2', 'EPUB'));
+    launcher.appendChild(actions);
+
+    bindFloatingEntry(launcher);
+    document.body.appendChild(launcher);
+    restoreFloatingEntryPosition(launcher);
+    return true;
+  }
+
+  function getFloatingStorage() {
+    try {
+      if (window.localStorage) return window.localStorage;
+    } catch (e) {}
+    return null;
+  }
+
+  function readFloatingEntryPosition() {
+    var storage = getFloatingStorage();
+    if (!storage) return null;
+    try {
+      var raw = storage.getItem(FLOATING_POS_KEY);
+      var parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed || typeof parsed.left !== 'number' || typeof parsed.top !== 'number') return null;
+      return parsed;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function writeFloatingEntryPosition(left, top) {
+    var storage = getFloatingStorage();
+    if (!storage) return;
+    try {
+      storage.setItem(FLOATING_POS_KEY, JSON.stringify({ left: left, top: top }));
+    } catch (e) {}
+  }
+
+  function clampFloatingEntryPosition(launcher, left, top) {
+    var margin = 8;
+    var width = launcher.offsetWidth || 36;
+    var height = launcher.offsetHeight || 36;
+    var maxLeft = Math.max(margin, window.innerWidth - width - margin);
+    var maxTop = Math.max(margin, window.innerHeight - height - margin);
+    return {
+      left: Math.min(Math.max(left, margin), maxLeft),
+      top: Math.min(Math.max(top, margin), maxTop)
+    };
+  }
+
+  function applyFloatingEntryPosition(launcher, left, top) {
+    var clamped = clampFloatingEntryPosition(launcher, left, top);
+    launcher.style.left = clamped.left + 'px';
+    launcher.style.top = clamped.top + 'px';
+    launcher.style.right = 'auto';
+    launcher.style.bottom = 'auto';
+    return clamped;
+  }
+
+  function restoreFloatingEntryPosition(launcher) {
+    var saved = readFloatingEntryPosition();
+    var left;
+    var top;
+    if (saved) {
+      left = saved.left;
+      top = saved.top;
+    } else {
+      left = window.innerWidth - (launcher.offsetWidth || 36) - 16;
+      top = Math.round(window.innerHeight * 0.38);
+    }
+    applyFloatingEntryPosition(launcher, left, top);
+  }
+
+  function keepFloatingEntryInViewport() {
+    var launcher = document.getElementById('kmoe-download-floating');
+    if (!launcher) return;
+    var rect = launcher.getBoundingClientRect();
+    applyFloatingEntryPosition(launcher, rect.left, rect.top);
+  }
+
+  function bindFloatingEntry(launcher) {
+    var dragging = false;
+    var moved = false;
+    var startX = 0;
+    var startY = 0;
+    var offsetX = 0;
+    var offsetY = 0;
+    var activePointerId = null;
+
+    function finishDrag(event) {
+      if (activePointerId === null) return;
+      if (event && event.pointerId !== undefined && event.pointerId !== activePointerId) return;
+      if (launcher.releasePointerCapture && activePointerId !== null) {
+        try {
+          launcher.releasePointerCapture(activePointerId);
+        } catch (e) {}
+      }
+      dragging = false;
+      activePointerId = null;
+      launcher.classList.remove('is-dragging');
+      if (moved) {
+        var rect = launcher.getBoundingClientRect();
+        var clamped = applyFloatingEntryPosition(launcher, rect.left, rect.top);
+        writeFloatingEntryPosition(clamped.left, clamped.top);
+        floatingSuppressClick = true;
+      }
     }
 
-    if (epubBtn && !epubBtn.parentNode.querySelector('.kmoe-download-btn')) {
-      var epubDownloadBtn = document.createElement('button');
-      epubDownloadBtn.type = 'button';
-      epubDownloadBtn.textContent = 'Kmoe-Download';
-      epubDownloadBtn.className = 'bt_sml_defa kmoe-download-btn';
-      epubDownloadBtn.style.cssText = 'width:120px;margin-right:4px;';
-      epubDownloadBtn.addEventListener('click', function (e) {
-        e.preventDefault();
-        toggleCard();
-      });
-      epubBtn.parentNode.insertBefore(epubDownloadBtn, epubBtn);
-    }
+    launcher.addEventListener('pointerdown', function (event) {
+      if (event.button !== undefined && event.button !== 0) return;
+      var point = event;
+      var rect = launcher.getBoundingClientRect();
+      dragging = false;
+      moved = false;
+      floatingSuppressClick = false;
+      activePointerId = typeof event.pointerId === 'number' ? event.pointerId : null;
+      startX = point.clientX;
+      startY = point.clientY;
+      offsetX = point.clientX - rect.left;
+      offsetY = point.clientY - rect.top;
+    });
 
-    return (mobiBtn || epubBtn);
+    launcher.addEventListener('pointermove', function (event) {
+      if (activePointerId !== null && event.pointerId !== activePointerId) return;
+      if (activePointerId === null) return;
+      var dx = event.clientX - startX;
+      var dy = event.clientY - startY;
+      if (!moved && (Math.abs(dx) > FLOATING_DRAG_THRESHOLD_PX || Math.abs(dy) > FLOATING_DRAG_THRESHOLD_PX)) {
+        moved = true;
+        dragging = true;
+        launcher.classList.add('is-dragging');
+        if (launcher.setPointerCapture && activePointerId !== null) {
+          try {
+            launcher.setPointerCapture(activePointerId);
+          } catch (e) {}
+        }
+      }
+      if (!moved) return;
+      applyFloatingEntryPosition(launcher, event.clientX - offsetX, event.clientY - offsetY);
+      event.preventDefault();
+    });
+
+    launcher.addEventListener('pointerup', finishDrag);
+    launcher.addEventListener('pointercancel', finishDrag);
+
+    window.addEventListener('resize', keepFloatingEntryInViewport);
+    window.addEventListener('scroll', keepFloatingEntryInViewport, true);
   }
 
   function groupByCategory(arr) {
@@ -541,11 +729,51 @@
 
   function savePreferredDownloadFormat(format) {
     preferredDownloadFormat = normalizeDownloadFormat(format);
-    chrome.storage.local.get(['kmoe_settings'], function (result) {
-      var settings = result.kmoe_settings || {};
-      settings.downloadFormat = preferredDownloadFormat;
-      chrome.storage.local.set({ kmoe_settings: settings });
-    });
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+
+    try {
+      chrome.storage.local.get(['kmoe_settings'], function (result) {
+        try {
+          var settings = result && result.kmoe_settings ? result.kmoe_settings : {};
+          settings.downloadFormat = preferredDownloadFormat;
+          chrome.storage.local.set({ kmoe_settings: settings });
+        } catch (err) {
+          console.warn('Kmoe 默认格式保存失败:', err);
+        }
+      });
+    } catch (err) {
+      console.warn('Kmoe 默认格式保存失败:', err);
+    }
+  }
+
+  function applyCardFormat(card, format) {
+    if (!card) return;
+    var normalizedFormat = normalizeDownloadFormat(format);
+    var formatSelect = card.querySelector('#kmoe-format');
+    if (!formatSelect) return;
+
+    formatSelect.value = normalizedFormat;
+    if (!cachedBookInfo) return;
+
+    var listEl = card.querySelector('#kmoe-chapter-list');
+    if (listEl) {
+      appendChapterList(listEl, cachedBookInfo.arr, normalizedFormat, cachedBookInfo.bookId);
+      updateSelectionInfo(cachedBookInfo);
+    }
+  }
+
+  function openCardWithFormat(format) {
+    var normalizedFormat = normalizeDownloadFormat(format);
+    savePreferredDownloadFormat(normalizedFormat);
+
+    var card = document.getElementById('kmoe-download-card');
+    if (!card) {
+      card = createCard();
+      if (!card) return;
+    }
+
+    applyCardFormat(card, normalizedFormat);
+    showCard();
   }
 
   function createCard() {
@@ -1500,25 +1728,10 @@
     hideCard();
   }
 
-  function toggleCard() {
-    var card = document.getElementById('kmoe-download-card');
-    if (!card) {
-      card = createCard();
-      if (!card) return;
-    }
-
-    if (cardVisible) {
-      hideCard();
-    } else {
-      showCard();
-    }
-  }
-
   function showCard() {
     var card = document.getElementById('kmoe-download-card');
     if (card) {
       card.style.display = 'block';
-      cardVisible = true;
     }
   }
 
@@ -1526,7 +1739,6 @@
     var card = document.getElementById('kmoe-download-card');
     if (card) {
       card.style.display = 'none';
-      cardVisible = false;
     }
   }
 
@@ -1587,8 +1799,9 @@
       formatQuotaSize: formatQuotaSize,
       formatFailureReason: formatFailureReason,
       getProgressItemText: getProgressItemText,
-      renderProgressItem: renderProgressItem,
-      resolveDownloadUrlResponse: resolveDownloadUrlResponse
+     renderProgressItem: renderProgressItem,
+      resolveDownloadUrlResponse: resolveDownloadUrlResponse,
+      getFloatingSuppressClick: function () { return floatingSuppressClick; }
     };
   }
 })();
