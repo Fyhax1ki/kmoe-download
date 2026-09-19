@@ -3,6 +3,7 @@ var historyData = {};
 
 const RECORD_EXPIRE_HOURS = 48;
 const KMOE_URL = 'https://kox.moe';
+const DEFAULT_COVER = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 50 70%22%3E%3Crect fill=%22%23eee%22 width=%2250%22 height=%2270%22/%3E%3Ctext x=%2225%22 y=%2240%22 text-anchor=%22middle%22 fill=%22%23ccc%22 font-size=%2210%22%3E%E6%97%A0%E5%B0%81%E9%9D%A2%3C/text%3E%3C/svg%3E';
 
 document.addEventListener('DOMContentLoaded', function() {
   loadHistory();
@@ -86,47 +87,60 @@ function renderBookList() {
   });
 
   if (books.length === 0) {
-    listEl.innerHTML = '<div class="empty-state">' +
-      '<p>暂无下载记录</p>' +
-      '<p class="hint">下载漫画后会自动记录，48小时内重新下载不消耗额度</p>' +
-    '</div>';
+    clearChildren(listEl);
+    var empty = document.createElement('div');
+    empty.className = 'empty-state';
+    appendTextElement(empty, 'p', '', '暂无下载记录');
+    appendTextElement(empty, 'p', 'hint', '下载漫画后会自动记录，48小时内重新下载不消耗额度');
+    listEl.appendChild(empty);
     return;
   }
 
-  var html = '';
+  clearChildren(listEl);
   books.forEach(function(book) {
-   var bookUrl = book.url || (KMOE_URL + '/c/' + book.id + '.htm');
-    html += '<div class="book-item">' +
-      '<div class="book-header" data-url="' + bookUrl + '">' +
-        '<img class="book-cover" src="' + (book.cover || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 70"><rect fill="%23eee" width="50" height="70"/><text x="25" y="40" text-anchor="middle" fill="%23ccc" font-size="10">无封面</text></svg>') + '" alt="">' +
-        '<div class="book-info">' +
-          '<div class="book-title">' + book.title + '</div>' +
-          '<div class="book-meta">' + book.volumes.length + ' 卷</div>' +
-        '</div>' +
-        '<div class="book-toggle">▶</div>' +
-      '</div>' +
-      '<div class="volume-list">';
+    var bookUrl = normalizeHistoryUrl(book.url, book.id);
+    var item = document.createElement('div');
+    item.className = 'book-item';
+
+    var header = document.createElement('div');
+    header.className = 'book-header';
+    header.dataset.url = bookUrl;
+
+    var cover = document.createElement('img');
+    cover.className = 'book-cover';
+    cover.alt = '';
+    cover.src = normalizeImageUrl(book.cover);
+    header.appendChild(cover);
+
+    var info = document.createElement('div');
+    info.className = 'book-info';
+    appendTextElement(info, 'div', 'book-title', book.title);
+    appendTextElement(info, 'div', 'book-meta', book.volumes.length + ' 卷');
+    header.appendChild(info);
+    appendTextElement(header, 'div', 'book-toggle', '▶');
+    item.appendChild(header);
+
+    var volumeList = document.createElement('div');
+    volumeList.className = 'volume-list';
 
     book.volumes.forEach(function(vol) {
       var isFree = isWithin48Hours(vol.time);
       var timeStr = formatTime(vol.time);
-      var statusHtml = isFree 
-        ? '<span class="volume-status free">免费</span>' 
-        : '<span class="volume-status expired">已过期</span>';
+      var volumeItem = document.createElement('div');
+      volumeItem.className = 'volume-item';
+      volumeItem.dataset.url = bookUrl;
+      appendTextElement(volumeItem, 'span', 'volume-name', vol.name);
 
-      html += '<div class="volume-item" data-url="' + bookUrl + '">' +
-        '<span class="volume-name">' + vol.name + '</span>' +
-        '<div>' +
-          '<span class="volume-time">' + timeStr + '</span>' +
-          statusHtml +
-        '</div>' +
-      '</div>';
+      var volumeMeta = document.createElement('div');
+      appendTextElement(volumeMeta, 'span', 'volume-time', timeStr);
+      appendTextElement(volumeMeta, 'span', 'volume-status ' + (isFree ? 'free' : 'expired'), isFree ? '免费' : '已过期');
+      volumeItem.appendChild(volumeMeta);
+      volumeList.appendChild(volumeItem);
     });
 
-    html += '</div></div>';
+    item.appendChild(volumeList);
+    listEl.appendChild(item);
   });
-
-  listEl.innerHTML = html;
 
   document.querySelectorAll('.book-header').forEach(function(header) {
     header.addEventListener('click', function(e) {
@@ -145,6 +159,51 @@ function renderBookList() {
       }
     });
   });
+}
+
+function clearChildren(node) {
+  while (node && node.firstChild) {
+    node.removeChild(node.firstChild);
+  }
+}
+
+function appendTextElement(parent, tagName, className, text) {
+  var el = document.createElement(tagName);
+  if (className) el.className = className;
+  el.textContent = text || '';
+  parent.appendChild(el);
+  return el;
+}
+
+function normalizeHistoryUrl(url, bookId) {
+  var fallback = KMOE_URL + '/c/' + encodeURIComponent(String(bookId || '')) + '.htm';
+  var value = String(url || '').trim();
+  if (!value) return fallback;
+
+  try {
+    var parsed = new URL(value);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.href;
+    }
+  } catch (e) {}
+
+  return fallback;
+}
+
+function normalizeImageUrl(url) {
+  var value = String(url || '').trim();
+  if (!value) return DEFAULT_COVER;
+
+  try {
+    var parsed = new URL(value);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.href;
+    }
+  } catch (e) {
+    if (/^data:image\/(?:png|gif|jpe?g|webp);/i.test(value)) return value;
+  }
+
+  return DEFAULT_COVER;
 }
 
 function isWithin48Hours(timestamp) {

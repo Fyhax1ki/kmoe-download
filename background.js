@@ -1,42 +1,20 @@
 (function () {
   'use strict';
 
-  var DEFAULT_ARIA2 = {
-    rpcUrl: 'http://127.0.0.1:6800/jsonrpc',
-    rpcToken: '',
-    dir: '',
-    split: 4,
-    maxConnectionPerServer: 4
-  };
-
-  function normalizeAria2(input) {
-    var aria2 = input || {};
-    var split = parseInt(aria2.split, 10);
-    var maxConnectionPerServer = parseInt(aria2.maxConnectionPerServer, 10);
-
-    if (!split || split < 1) split = DEFAULT_ARIA2.split;
-    if (split > 16) split = 16;
-    if (!maxConnectionPerServer || maxConnectionPerServer < 1) maxConnectionPerServer = DEFAULT_ARIA2.maxConnectionPerServer;
-    if (maxConnectionPerServer > 16) maxConnectionPerServer = 16;
-
-    return {
-      rpcUrl: (aria2.rpcUrl || DEFAULT_ARIA2.rpcUrl).trim(),
-      rpcToken: (aria2.rpcToken || '').trim(),
-      dir: (aria2.dir || '').trim(),
-      split: split,
-      maxConnectionPerServer: maxConnectionPerServer
-    };
+  if (typeof importScripts === 'function' && !globalThis.KmoeSettings) {
+    importScripts('shared/settings.js');
   }
 
+  var Settings = globalThis.KmoeSettings;
+
   function loadAria2Settings(callback) {
-    chrome.storage.local.get(['kmoe_settings'], function (result) {
-      var settings = result.kmoe_settings || {};
-      callback(normalizeAria2(settings.aria2));
+    Settings.loadSettings(function (settings) {
+      callback(settings.aria2);
     });
   }
 
   function aria2Rpc(aria2, method, params, callback) {
-    aria2 = normalizeAria2(aria2);
+    aria2 = Settings.normalizeAria2(aria2);
     params = params || [];
     if (aria2.rpcToken) {
       params = ['token:' + aria2.rpcToken].concat(params);
@@ -237,7 +215,7 @@
 
   function handleAria2Test(message, sendResponse) {
     var payload = message.payload || {};
-    var aria2 = normalizeAria2(payload.aria2);
+    var aria2 = Settings.normalizeAria2(payload.aria2);
     aria2Rpc(aria2, 'aria2.getVersion', [], function (err, result) {
       if (err) {
         sendResponse({ ok: false, error: err.message });

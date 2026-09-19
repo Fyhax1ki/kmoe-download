@@ -44,7 +44,7 @@
         "http://kzo.moe/*",
         "http://kzz.moe/*"
       ],
-      "js": ["content/content.js"],
+      "js": ["shared/settings.js", "content/content.js"],
       "css": ["content/content.css"],
       "run_at": "document_end"
     }
