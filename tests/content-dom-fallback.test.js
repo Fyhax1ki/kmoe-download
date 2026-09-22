@@ -49,6 +49,9 @@ function createNode(props) {
     get firstChild() {
       return this.children[0] || null;
     },
+    get lastChild() {
+      return this.children[this.children.length - 1] || null;
+    },
     get previousSibling() {
       if (!this.parentNode || !Array.isArray(this.parentNode.children)) return null;
       const index = this.parentNode.children.indexOf(this);
@@ -343,6 +346,37 @@ test('content script reads each volume name from its own cell when two volumes s
   assert.deepEqual(Array.from(bookInfo.arr.map((item) => item.name)), ['第09巻', '第10巻']);
   assert.equal(bookInfo.arr[0].mobiSize, 19.1);
   assert.equal(bookInfo.arr[1].mobiSize, 20.4);
+});
+
+test('content script reads a volume name from the cell before its checkbox cell', () => {
+  const context = createContentContext();
+  const name = createNode({ tagName: 'B', textContent: '  第08巻 ' });
+  const nameCell = createNode({ tagName: 'TD', children: [name] });
+  const checkboxCell = createNode({ tagName: 'TD' });
+  const checkbox = createNode({ tagName: 'INPUT', value: '108', parentNode: checkboxCell });
+  name.parentNode = nameCell;
+  checkboxCell.children.push(checkbox);
+  checkboxCell.querySelectorAll = function(selector) {
+    if (selector === 'input') return [createNode({ name: 'size_down_108', value: '18.6' })];
+    return [];
+  };
+
+  const row = createNode({ tagName: 'TR', children: [nameCell, checkboxCell] });
+  nameCell.parentNode = row;
+  checkboxCell.parentNode = row;
+
+  context.document.querySelectorAll = function(selector) {
+    if (selector === 'script[type="module"]') return [];
+    if (selector === 'input[name="checkbox_vol"]') return [checkbox];
+    if (selector === "a[href*='list.php?s=']") return [];
+    return [];
+  };
+
+  loadContentScript(context);
+
+  const bookInfo = context.window.__kmoeTestHooks.collectBookInfoFromDocument();
+  assert.equal(bookInfo.arr[0].name, '第08巻');
+  assert.equal(bookInfo.arr[0].mobiSize, 18.6);
 });
 
 test('content script caches bridge payload sent as a string message', () => {

@@ -686,29 +686,49 @@
   }
 
   function findChapterName(input, cell) {
-    var node = input;
-    while (node && node !== cell) {
+    var name = findNameBeforeNode(input, cell);
+    if (name) return name;
+
+    var previousCell = cell ? cell.previousSibling : null;
+    while (previousCell && String(previousCell.tagName || '').toUpperCase() !== 'TD') {
+      previousCell = previousCell.previousSibling;
+    }
+    if (previousCell) {
+      name = findNameBeforeNode(previousCell.lastChild, previousCell);
+      if (name) return name;
+    }
+
+    return '';
+  }
+
+  function findNameBeforeNode(node, boundary) {
+    while (node && node !== boundary) {
+      var current = node.tagName ? node : null;
       var previous = node.previousSibling;
+      if (current) {
+        var currentName = nameFromNode(current);
+        if (currentName) return currentName;
+      }
       while (previous) {
-        var nameNode = null;
-        if (String(previous.tagName || '').toUpperCase() === 'B') {
-          nameNode = previous;
-        } else if (previous.querySelector) {
-          nameNode = previous.querySelector('b');
-        }
-        if (nameNode && nameNode.textContent && nameNode.textContent.trim()) {
-          return nameNode.textContent.trim();
-        }
+        var previousName = nameFromNode(previous);
+        if (previousName) return previousName;
         previous = previous.previousSibling;
       }
       node = node.parentNode || null;
     }
 
-    if (cell && cell.querySelector) {
-      var fallback = cell.querySelector('b');
-      if (fallback && fallback.textContent) return fallback.textContent.trim();
-    }
     return '';
+  }
+
+  function nameFromNode(node) {
+    if (!node) return '';
+    var nameNode = null;
+    if (String(node.tagName || '').toUpperCase() === 'B') {
+      nameNode = node;
+    } else if (node.querySelector) {
+      nameNode = node.querySelector('b');
+    }
+    return nameNode && nameNode.textContent ? nameNode.textContent.trim() : '';
   }
 
   function collectBookInfoFromDocument() {
