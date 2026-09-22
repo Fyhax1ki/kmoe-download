@@ -379,6 +379,53 @@ test('content script reads a volume name from the cell before its checkbox cell'
   assert.equal(bookInfo.arr[0].mobiSize, 18.6);
 });
 
+test('content script groups rendered volumes by the category heading above them', () => {
+  const context = createContentContext();
+  const categories = ['單行本', '番外', '連載'];
+  const rows = [];
+  const checkboxes = [];
+
+  categories.forEach(function(category, index) {
+    const heading = createNode({ tagName: 'B', textContent: '　　' + category + ' :' });
+    const headingRow = createNode({ tagName: 'TR', children: [heading] });
+    heading.parentNode = headingRow;
+    headingRow.querySelectorAll = function(selector) {
+      if (selector === 'b') return [heading];
+      if (selector === 'input[name="checkbox_vol"]') return [];
+      return [];
+    };
+
+    const checkbox = createNode({ tagName: 'INPUT', value: String(100 + index) });
+    const volumeRow = createNode({ tagName: 'TR', children: [checkbox] });
+    checkbox.parentNode = volumeRow;
+    checkbox.closest = function() { return volumeRow; };
+    volumeRow.querySelectorAll = function(selector) {
+      if (selector === 'input[name="checkbox_vol"]') return [checkbox];
+      return [];
+    };
+
+    rows.push(headingRow, volumeRow);
+    checkboxes.push(checkbox);
+  });
+
+  rows.forEach(function(row, index) {
+    row.parentNode = { children: rows };
+    if (index > 0) row.previousSibling = rows[index - 1];
+  });
+
+  context.document.querySelectorAll = function(selector) {
+    if (selector === 'script[type="module"]') return [];
+    if (selector === 'input[name="checkbox_vol"]') return checkboxes;
+    if (selector === "a[href*='list.php?s=']") return [];
+    return [];
+  };
+
+  loadContentScript(context);
+
+  const bookInfo = context.window.__kmoeTestHooks.collectBookInfoFromDocument();
+  assert.deepEqual(Array.from(bookInfo.arr.map((item) => item.category)), categories);
+});
+
 test('content script caches bridge payload sent as a string message', () => {
   const context = createContentContext();
   loadContentScript(context);

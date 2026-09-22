@@ -731,6 +731,28 @@
     return nameNode && nameNode.textContent ? nameNode.textContent.trim() : '';
   }
 
+  function findChapterCategory(row) {
+    var current = row;
+    while (current) {
+      if (!current.querySelector || !current.querySelector('input[name="checkbox_vol"]')) {
+        var category = categoryFromRow(current);
+        if (category) return category;
+      }
+      current = current.previousSibling;
+    }
+    return '';
+  }
+
+  function categoryFromRow(row) {
+    if (!row || !row.querySelectorAll) return '';
+    var labels = Array.from(row.querySelectorAll('b'));
+    for (var i = 0; i < labels.length; i++) {
+      var text = String(labels[i].textContent || '').replace(/[\s:：]/g, '');
+      if (text && text !== '全選' && text !== '全选') return text;
+    }
+    return '';
+  }
+
   function collectBookInfoFromDocument() {
     var bookId = findRenderedBookId();
     if (!bookId) return null;
@@ -746,10 +768,11 @@
       var cell = findChapterCell(input);
       var name = findChapterName(input, cell);
       var size = findChapterSize(cell, row, volId);
+      var category = findChapterCategory(row);
 
       chapters.push({
         id: volId,
-        category: '章节',
+        category: category || '章节',
         name: name || '第' + (chapters.length + 1) + '章',
         mobiSize: size,
         epubSize: size
