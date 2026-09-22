@@ -659,9 +659,11 @@
     return match ? match[1] : '';
   }
 
-  function findChapterSize(row, volId) {
+  function findChapterSize(cell, row, volId) {
     var expectedName = 'size_down_' + volId;
-    var input = findInputByName(row, expectedName) || findInputByName(document, expectedName);
+    var input = findInputByName(cell, expectedName) ||
+      findInputByName(row, expectedName) ||
+      findInputByName(document, expectedName);
 
     var size = input && input.value ? parseFloat(input.value) : null;
     return size && size > 0 ? size : null;
@@ -672,6 +674,41 @@
     return Array.from(root.querySelectorAll('input')).find(function (input) {
       return input.name === name;
     }) || null;
+  }
+
+  function findChapterCell(input) {
+    var node = input;
+    while (node) {
+      if (String(node.tagName || '').toUpperCase() === 'TD') return node;
+      node = node.parentNode || null;
+    }
+    return null;
+  }
+
+  function findChapterName(input, cell) {
+    var node = input;
+    while (node && node !== cell) {
+      var previous = node.previousSibling;
+      while (previous) {
+        var nameNode = null;
+        if (String(previous.tagName || '').toUpperCase() === 'B') {
+          nameNode = previous;
+        } else if (previous.querySelector) {
+          nameNode = previous.querySelector('b');
+        }
+        if (nameNode && nameNode.textContent && nameNode.textContent.trim()) {
+          return nameNode.textContent.trim();
+        }
+        previous = previous.previousSibling;
+      }
+      node = node.parentNode || null;
+    }
+
+    if (cell && cell.querySelector) {
+      var fallback = cell.querySelector('b');
+      if (fallback && fallback.textContent) return fallback.textContent.trim();
+    }
+    return '';
   }
 
   function collectBookInfoFromDocument() {
@@ -686,9 +723,9 @@
       if (!volId) return;
 
       var row = input.closest ? input.closest('tr') : null;
-      var nameNode = row ? row.querySelector('b') : null;
-      var name = nameNode && nameNode.textContent ? nameNode.textContent.trim() : '';
-      var size = findChapterSize(row, volId);
+      var cell = findChapterCell(input);
+      var name = findChapterName(input, cell);
+      var size = findChapterSize(cell, row, volId);
 
       chapters.push({
         id: volId,

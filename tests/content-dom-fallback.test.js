@@ -49,6 +49,11 @@ function createNode(props) {
     get firstChild() {
       return this.children[0] || null;
     },
+    get previousSibling() {
+      if (!this.parentNode || !Array.isArray(this.parentNode.children)) return null;
+      const index = this.parentNode.children.indexOf(this);
+      return index > 0 ? this.parentNode.children[index - 1] : null;
+    },
     closest() {
       return null;
     }
@@ -121,8 +126,12 @@ function createContentContext() {
   });
 
   const row1 = createNode();
+  const row1Name = createNode({ tagName: 'B', textContent: '第01巻' });
+  const row1Cell = createNode({ tagName: 'TD', children: [row1Name] });
+  row1Name.parentNode = row1Cell;
+  row1.appendChild(row1Cell);
   row1.querySelector = function(selector) {
-    if (selector === 'b') return createNode({ textContent: '第01巻' });
+    if (selector === 'b') return row1Name;
     return null;
   };
   row1.querySelectorAll = function(selector) {
@@ -131,8 +140,12 @@ function createContentContext() {
   };
 
   const row2 = createNode();
+  const row2Name = createNode({ tagName: 'B', textContent: '第02巻' });
+  const row2Cell = createNode({ tagName: 'TD', children: [row2Name] });
+  row2Name.parentNode = row2Cell;
+  row2.appendChild(row2Cell);
   row2.querySelector = function(selector) {
-    if (selector === 'b') return createNode({ textContent: '第02巻' });
+    if (selector === 'b') return row2Name;
     return null;
   };
   row2.querySelectorAll = function(selector) {
@@ -141,9 +154,11 @@ function createContentContext() {
   };
 
   const chapterCheckboxes = [
-    createNode({ value: '101', closest() { return row1; } }),
-    createNode({ value: '102', closest() { return row2; } })
+    createNode({ tagName: 'INPUT', value: '101', parentNode: row1Cell, closest() { return row1; } }),
+    createNode({ tagName: 'INPUT', value: '102', parentNode: row2Cell, closest() { return row2; } })
   ];
+  row1Cell.children.push(chapterCheckboxes[0]);
+  row2Cell.children.push(chapterCheckboxes[1]);
   let messageListener = null;
 
   const context = {
@@ -274,6 +289,60 @@ test('content script rebuilds book info from rendered page DOM when bridge data 
   assert.equal(bookInfo.arr[0].name, '第01巻');
   assert.equal(bookInfo.arr[0].mobiSize, 15.2);
   assert.equal(bookInfo.arr[0].epubSize, 15.2);
+});
+
+test('content script reads each volume name from its own cell when two volumes share a row', () => {
+  const context = createContentContext();
+  const leftName = createNode({ tagName: 'B', textContent: '  第09巻 ' });
+  const rightName = createNode({ tagName: 'B', textContent: '  第10巻 ' });
+  const leftCell = createNode({ tagName: 'TD', children: [leftName] });
+  const rightCell = createNode({ tagName: 'TD', children: [rightName] });
+  leftName.parentNode = leftCell;
+  rightName.parentNode = rightCell;
+
+  const leftCheckbox = createNode({ tagName: 'INPUT', value: '109', parentNode: leftCell });
+  const rightCheckbox = createNode({ tagName: 'INPUT', value: '110', parentNode: rightCell });
+  leftCell.children.push(leftCheckbox);
+  rightCell.children.push(rightCheckbox);
+  leftCell.querySelectorAll = function(selector) {
+    if (selector === 'input') return [createNode({ name: 'size_down_109', value: '19.1' })];
+    return [];
+  };
+  rightCell.querySelectorAll = function(selector) {
+    if (selector === 'input') return [createNode({ name: 'size_down_110', value: '20.4' })];
+    return [];
+  };
+
+  const sharedRow = createNode({ tagName: 'TR', children: [leftCell, rightCell] });
+  leftCell.parentNode = sharedRow;
+  rightCell.parentNode = sharedRow;
+  sharedRow.querySelector = function(selector) {
+    if (selector === 'b') return leftName;
+    return null;
+  };
+  sharedRow.querySelectorAll = function(selector) {
+    if (selector === 'input') {
+      return [
+        createNode({ name: 'size_down_109', value: '19.1' }),
+        createNode({ name: 'size_down_110', value: '20.4' })
+      ];
+    }
+    return [];
+  };
+
+  context.document.querySelectorAll = function(selector) {
+    if (selector === 'script[type="module"]') return [];
+    if (selector === 'input[name="checkbox_vol"]') return [leftCheckbox, rightCheckbox];
+    if (selector === "a[href*='list.php?s=']") return [];
+    return [];
+  };
+
+  loadContentScript(context);
+
+  const bookInfo = context.window.__kmoeTestHooks.collectBookInfoFromDocument();
+  assert.deepEqual(Array.from(bookInfo.arr.map((item) => item.name)), ['第09巻', '第10巻']);
+  assert.equal(bookInfo.arr[0].mobiSize, 19.1);
+  assert.equal(bookInfo.arr[1].mobiSize, 20.4);
 });
 
 test('content script caches bridge payload sent as a string message', () => {
