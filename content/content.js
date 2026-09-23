@@ -8,7 +8,6 @@
   const DOWNLOAD_REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
   const DOWNLOAD_STALL_TIMEOUT_MS = 90000;
   const Settings = globalThis.KmoeSettings;
-  const FLOATING_POS_KEY = 'kmoe_floating_entry_pos';
   const FLOATING_DRAG_THRESHOLD_PX = 5;
   let cachedBookInfo = null;
   var downloadRecords = {};
@@ -228,7 +227,7 @@
     title.appendChild(mark);
     var titleText = document.createElement('span');
     titleText.className = 'kmoe-floating-title-text';
-    titleText.textContent = 'Batch DL';
+    titleText.textContent = '批量下载';
     title.appendChild(titleText);
     launcher.appendChild(title);
 
@@ -240,36 +239,7 @@
 
     bindFloatingEntry(launcher);
     document.body.appendChild(launcher);
-    restoreFloatingEntryPosition(launcher);
     return true;
-  }
-
-  function getFloatingStorage() {
-    try {
-      if (window.localStorage) return window.localStorage;
-    } catch (e) {}
-    return null;
-  }
-
-  function readFloatingEntryPosition() {
-    var storage = getFloatingStorage();
-    if (!storage) return null;
-    try {
-      var raw = storage.getItem(FLOATING_POS_KEY);
-      var parsed = raw ? JSON.parse(raw) : null;
-      if (!parsed || typeof parsed.left !== 'number' || typeof parsed.top !== 'number') return null;
-      return parsed;
-    } catch (e) {
-      return null;
-    }
-  }
-
-  function writeFloatingEntryPosition(left, top) {
-    var storage = getFloatingStorage();
-    if (!storage) return;
-    try {
-      storage.setItem(FLOATING_POS_KEY, JSON.stringify({ left: left, top: top }));
-    } catch (e) {}
   }
 
   function clampFloatingEntryPosition(launcher, left, top) {
@@ -291,20 +261,6 @@
     launcher.style.right = 'auto';
     launcher.style.bottom = 'auto';
     return clamped;
-  }
-
-  function restoreFloatingEntryPosition(launcher) {
-    var saved = readFloatingEntryPosition();
-    var left;
-    var top;
-    if (saved) {
-      left = saved.left;
-      top = saved.top;
-    } else {
-      left = window.innerWidth - (launcher.offsetWidth || 36) - 16;
-      top = Math.round(window.innerHeight * 0.38);
-    }
-    applyFloatingEntryPosition(launcher, left, top);
   }
 
   function keepFloatingEntryInViewport() {
@@ -336,8 +292,7 @@
       launcher.classList.remove('is-dragging');
       if (moved) {
         var rect = launcher.getBoundingClientRect();
-        var clamped = applyFloatingEntryPosition(launcher, rect.left, rect.top);
-        writeFloatingEntryPosition(clamped.left, clamped.top);
+        applyFloatingEntryPosition(launcher, rect.left, rect.top);
         floatingSuppressClick = true;
       }
     }
@@ -947,6 +902,7 @@
     chapterList.id = 'kmoe-chapter-list';
     appendChapterList(chapterList, bookInfo.arr, initialFormat, bookInfo.bookId);
     body.appendChild(chapterList);
+    card.appendChild(body);
 
     var downloadInfo = document.createElement('div');
     downloadInfo.className = 'kmoe-download-info';
@@ -956,7 +912,7 @@
     selectedSize.id = 'kmoe-selected-size';
     sizeText.appendChild(document.createTextNode('MB'));
     downloadInfo.appendChild(sizeText);
-    body.appendChild(downloadInfo);
+    card.appendChild(downloadInfo);
 
     var actions = document.createElement('div');
     actions.className = 'kmoe-download-actions';
@@ -966,8 +922,7 @@
     startButton.type = 'button';
     startButton.textContent = '开始下载';
     actions.appendChild(startButton);
-    body.appendChild(actions);
-    card.appendChild(body);
+    card.appendChild(actions);
 
     document.body.appendChild(card);
 
@@ -1811,7 +1766,7 @@
   function showCard() {
     var card = document.getElementById('kmoe-download-card');
     if (card) {
-      card.style.display = 'block';
+      card.style.display = 'flex';
     }
   }
 

@@ -468,12 +468,12 @@ test('content script injects a floating entry with mobi and epub actions', () =>
   const launcher = context.document.body.children.find((child) => child.id === 'kmoe-download-floating');
   assert.ok(launcher);
   assert.equal(launcher.children[0].children[0].textContent, 'K');
-  assert.equal(launcher.children[0].children[1].textContent, 'Batch DL');
+  assert.equal(launcher.children[0].children[1].textContent, '批量下载');
   assert.deepEqual(launcher.children[1].children.map((child) => child.textContent), ['MOBI', 'EPUB']);
   assert.deepEqual(launcher.children[1].children.map((child) => child.dataset.format), ['1', '2']);
 });
 
-test('floating entry drag saves position without opening formats', () => {
+test('floating entry drag does not remember position without opening formats', () => {
   const context = createContentContext();
   context.document.readyState = 'complete';
   context.document.createElement = function(tagName) {
@@ -494,9 +494,9 @@ test('floating entry drag saves position without opening formats', () => {
   launcher.dispatchEvent('pointermove', { pointerId: 1, clientX: 200, clientY: 120, preventDefault() {} });
   launcher.dispatchEvent('pointerup', { pointerId: 1, preventDefault() {} });
 
-  assert.equal(launcher.style.left, '230px');
-  assert.equal(launcher.style.top, '124px');
-  assert.equal(context.window.localStorage.getItem('kmoe_floating_entry_pos'), JSON.stringify({ left: 230, top: 124 }));
+  assert.equal(launcher.style.left, '8px');
+  assert.equal(launcher.style.top, '8px');
+  assert.equal(context.window.localStorage.getItem('kmoe_floating_entry_pos'), null);
   assert.equal(context.window.__kmoeTestHooks.getFloatingSuppressClick(), true);
 });
 
