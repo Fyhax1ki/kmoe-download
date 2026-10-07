@@ -36,7 +36,6 @@
   var exporting = false;
   var exportCancelled = false;
   var pendingRefresh = false;
-  var suppressClick = false;
   var lastSignature = '';
 
   // ---------------------------------------------------------------------------
@@ -449,6 +448,24 @@
     };
   }
 
+  // 拖拽结束后浏览器会补一次 click，这一次要忽略（否则拖完会误触打开面板）。
+  // 标记挂在面板元素自己身上，而不是共享变量：
+  //  - 拖「面板」不会把「悬浮入口」的点击一起抑制掉；
+  //  - 标记只消费一次，不会永久生效。
+  function clearDragClick(panel) {
+    if (panel && panel.dataset) delete panel.dataset.kmoeDragged;
+  }
+
+  function markDragClick(panel) {
+    if (panel && panel.dataset) panel.dataset.kmoeDragged = '1';
+  }
+
+  function consumeDragClick(panel) {
+    if (!panel || !panel.dataset || panel.dataset.kmoeDragged !== '1') return false;
+    clearDragClick(panel);
+    return true;
+  }
+
   function makeDraggable(panel, handle) {
     if (!panel || !handle || panel.dataset.kmoeDrag === '1') return;
     panel.dataset.kmoeDrag = '1';
@@ -463,11 +480,14 @@
 
     handle.addEventListener('pointerdown', function (event) {
       if (event.button !== undefined && event.button !== 0) return;
+      // 任何一次新的按下都先清掉上次拖拽留下的抑制标记。
+      // 按钮上的 pointerdown 会在下面提前 return，若不先清理，
+      // 「拖过一次之后再点按钮」就会被永久忽略。
+      clearDragClick(panel);
       if (event.target && event.target.closest && event.target.closest('button, a, input, select, textarea')) return;
       var rect = panel.getBoundingClientRect();
       dragging = true;
       moved = false;
-      suppressClick = false;
       pointerId = typeof event.pointerId === 'number' ? event.pointerId : null;
       startX = event.clientX;
       startY = event.clientY;
@@ -501,7 +521,7 @@
       dragging = false;
       pointerId = null;
       panel.classList.remove('is-dragging');
-      if (moved) suppressClick = true;
+      if (moved) markDragClick(panel);
     }
 
     handle.addEventListener('pointerup', stop);
@@ -524,7 +544,9 @@
     button.title = '从浏览器缓存导出当前系列';
     button.addEventListener('click', function (event) {
       event.preventDefault();
-      if (suppressClick) return;
+      // 拖拽结束后浏览器会补一次 click，这一次忽略；标记只消费一次且只属于本元素，
+      // 所以不会把之后真正的点击也吃掉。
+      if (consumeDragClick(launcher)) return;
       openCard();
     });
     launcher.appendChild(button);
@@ -816,7 +838,10 @@
   }
 
   function openCard() {
-    var card = document.getElementById(CARD_ID) || createCard();
+    // 面板元素如果被页面重渲染移除，这里重建，避免“点了没反应”。
+    var card = document.getElementById(CARD_ID);
+    if (!card) card = createCard();
+    if (!card) return;
     card.style.display = 'flex';
     setReport('');
     setProgress(0, '');
@@ -1160,20 +1185,25 @@
   function scan() {
     var volumes = collectPageVolumes();
     var signature = pageSignature(volumes, getSeriesHint());
-    if (signature === lastSignature) return;
+    var changed = signature !== lastSignature;
     lastSignature = signature;
 
     if (!volumes.length) {
-      removeFloatingEntry();
+      if (changed) removeFloatingEntry();
       return;
     }
 
+    // 每次扫描都确保入口存在：元素被页面重渲染移除时能自愈。
     ensureFloatingEntry();
+
+    if (!changed) return;
 
     // 站点会增量渲染卷列表。面板只在用户点击“刷新缓存”时重建，
     // 否则每次页面变动都重渲染会让面板跳动、干扰操作。
+    if (cacheRun || exporting || pendingRefresh) return;
+
     var card = document.getElementById(CARD_ID);
-    if (card && card.style.display !== 'none' && !exporting && !pendingRefresh) {
+    if (card && card.style.display !== 'none') {
       pendingRefresh = true;
       setRefreshHint(true);
     }
