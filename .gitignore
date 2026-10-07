@@ -3,3 +3,6 @@ Thumbs.db
 *.zip
 *.crx
 *.pem
+
+# Playwright MCP 工作目录（控制台日志、截图等）
+.playwright-mcp/

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Kmoe Download",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Kmoe 漫画下载扩展",
   "permissions": [
     "activeTab",
@@ -11,6 +11,7 @@
   "host_permissions": [
     "http://127.0.0.1/*",
     "http://localhost/*",
+    "https://koobone.com/*",
     "https://kxx.moe/*",
     "https://kxo.moe/*",
     "https://mox.moe/*",
@@ -47,6 +48,22 @@
       "js": ["shared/settings.js", "content/content.js"],
       "css": ["content/content.css"],
       "run_at": "document_end"
+    },
+    {
+      "matches": [
+        "https://koobone.com/*"
+      ],
+      "js": ["shared/zip.js", "shared/reader-export.js", "content/reader.js"],
+      "css": ["content/reader.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://koobone.com/*"
+      ],
+      "js": ["scripts/reader-bridge.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
     }
   ],
   "action": {
