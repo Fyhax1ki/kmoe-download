@@ -252,6 +252,15 @@
   color: #991b1b;
 }
 
+.kmoe-ec-item-skipped .kmoe-ec-item-flag {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.kmoe-ec-item-skipped .kmoe-ec-item-name {
+  color: #92400e;
+}
+
 .kmoe-ec-item-name {
   flex: 1 1 auto;
   color: #1e293b;

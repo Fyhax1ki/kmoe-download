@@ -23,9 +23,7 @@ function record(md5, overrides) {
     vol_language: 'zh-TW',
     file_type: '2',
     islocal: 0,
-    fileSize: 1024,
-    hasCover: false,
-    coverType: ''
+    fileSize: 1024
   }, overrides || {});
 }
 
@@ -73,9 +71,6 @@ test('maps cached file types to export extensions', () => {
   assert.equal(Export.normalizeExtension('application/pdf'), 'pdf');
   assert.equal(Export.normalizeExtension(''), 'epub');
   assert.equal(Export.normalizeExtension(null), 'epub');
-  assert.equal(Export.coverExtension('image/png'), 'png');
-  assert.equal(Export.coverExtension('image/webp'), 'webp');
-  assert.equal(Export.coverExtension(''), 'jpg');
 });
 
 test('pads volume numbers and formats sizes', () => {
@@ -198,89 +193,30 @@ test('deduplicates repeated md5 entries and keeps same-named volumes distinct', 
   assert.deepEqual(plan.items.map((item) => item.filename), ['01 S same.epub', '02 S same.epub']);
 });
 
-test('picks the first available cover and keeps its own extension', () => {
+test('exports only EPUB source files and skips other cached formats', () => {
   const plan = Export.buildExportPlan({
     seriesHint: 'S',
-    volumes: [{ md5: 'aaa', name: 'a' }, { md5: 'bbb', name: 'b' }],
+    volumes: [
+      { md5: 'epub1', name: '第01卷' },
+      { md5: 'mobi1', name: '第02卷' },
+      { md5: 'pdf1', name: '第03卷' }
+    ],
     cachedByMd5: {
-      aaa: record('aaa', { vol_series: 'S', hasCover: false }),
-      bbb: record('bbb', { vol_series: 'S', hasCover: true, coverType: 'image/png' })
+      epub1: record('epub1', { vol_series: 'S', fileSize: 1024 }),
+      mobi1: record('mobi1', { vol_series: 'S', file_type: '1', vol_name: '第02卷', fileSize: 2048 }),
+      pdf1: record('pdf1', { vol_series: 'S', file_type: 'application/pdf', vol_name: '第03卷', fileSize: 4096 })
     }
   });
 
-  assert.deepEqual(plan.cover, { filename: 'cover.png', md5: 'bbb' });
-});
-
-test('supports a cached volume with a locally imported file', () => {
-  const plan = Export.buildExportPlan({
-    seriesHint: 'S',
-    volumes: [{ md5: 'aaa', name: 'a' }],
-    cachedByMd5: { aaa: record('aaa', { vol_series: 'S', islocal: 1 }) }
-  });
-
-  assert.equal(plan.items[0].local, true);
-  assert.equal(Export.buildManifest(plan, {}).volumes[0].importedLocally, true);
-});
-
-test('builds a manifest that describes the archive contents', () => {
-  const plan = Export.buildExportPlan({
-    seriesHint: '妄想老師',
-    volumes: [{ md5: 'aaa', name: '第01卷' }, { md5: 'bbb', name: '第02卷' }],
-    cachedByMd5: { aaa: record('aaa') }
-  });
-
-  const manifest = Export.buildManifest(plan, {
-    exportedAt: '2026-02-19T00:00:00.000Z',
-    pageUrl: 'https://koobone.com/',
-    pageTitle: 'KOOBONE',
-    site: 'koobone.com'
-  });
-
-  assert.equal(manifest.series, '妄想老師');
-  assert.equal(manifest.directory, '妄想老師');
-  assert.equal(manifest.exportedAt, '2026-02-19T00:00:00.000Z');
-  assert.deepEqual(manifest.stats, {
-    listed: 2,
-    exported: 1,
-    missing: 1,
-    totalBytes: 1024,
-    totalSize: '1.0 KiB'
-  });
-  assert.deepEqual(manifest.volumes.map((volume) => volume.filename), ['01 妄想老師 第01卷.epub']);
-  assert.deepEqual(manifest.missing.map((entry) => entry.md5), ['bbb']);
-  assert.equal(manifest.source.site, 'koobone.com');
-  assert.ok(manifest.generator.indexOf('Kmoe') !== -1);
-});
-
-test('builds a missing report that names every absent volume and md5', () => {
-  const plan = Export.buildExportPlan({
-    seriesHint: '妄想老師',
-    volumes: [{ md5: 'aaa', name: '第01卷' }, { md5: 'bbb', name: '第02卷' }],
-    cachedByMd5: { aaa: record('aaa') }
-  });
-
-  const text = Export.buildMissingReport(plan, { exportedAt: '2026-02-19T00:00:00.000Z' });
-
-  assert.ok(text.indexOf('系列：妄想老師') !== -1);
-  assert.ok(text.indexOf('已导出 1 卷') !== -1);
-  assert.ok(text.indexOf('01 妄想老師 第01卷.epub') !== -1);
-  assert.ok(text.indexOf('缓存中缺失 1 卷') !== -1);
-  assert.ok(text.indexOf('第02卷') !== -1);
-  assert.ok(text.indexOf('file_md5: bbb') !== -1);
-  assert.ok(text.indexOf('不会联网下载') !== -1);
-});
-
-test('reports a fully cached series as complete', () => {
-  const plan = Export.buildExportPlan({
-    seriesHint: '花落紅',
-    volumes: [{ md5: 'aaa', name: '第01卷' }],
-    cachedByMd5: { aaa: record('aaa', { vol_series: '花落紅' }) }
-  });
-
-  const text = Export.buildMissingReport(plan, {});
-  assert.ok(text.indexOf('缓存中缺失 0 卷') !== -1);
-  assert.ok(text.indexOf('已全部导出') !== -1);
-  assert.ok(text.indexOf('不会联网下载') === -1 || text.indexOf('已全部导出') !== -1);
+  assert.deepEqual(plan.items.map((item) => item.filename), ['01 S 第01卷.epub']);
+  assert.equal(plan.exportedCount, 1);
+  assert.equal(plan.skippedCount, 2);
+  assert.equal(plan.missingCount, 0);
+  // Only EPUB bytes count towards the archive size.
+  assert.equal(plan.totalBytes, 1024);
+  assert.deepEqual(plan.skipped.map((entry) => entry.ext), ['mobi', 'pdf']);
+  assert.deepEqual(plan.skipped.map((entry) => entry.name), ['第02卷', '第03卷']);
+  assert.ok(plan.notes.some((note) => note.indexOf('不是 EPUB') !== -1));
 });
 
 test('extracts volume ordinals only from explicit volume markers', () => {
@@ -415,25 +351,6 @@ test('trusts the cached series name over the rendered name prefix', () => {
   const grouping = Export.groupVolumesBySeries(volumes, { x: record('x', { vol_series: '真系列' }) }, '');
 
   assert.deepEqual(grouping.groups.map((group) => group.series), ['真系列']);
-});
-
-test('lists archive entries in offline-reading order', () => {
-  const plan = Export.buildExportPlan({
-    seriesHint: '妄想老師',
-    volumes: [{ md5: 'aaa', name: '第01卷' }, { md5: 'bbb', name: '第02卷' }],
-    cachedByMd5: {
-      aaa: record('aaa', { hasCover: true, coverType: 'image/jpeg' }),
-      bbb: record('bbb', { vol_name: '第02卷' })
-    }
-  });
-
-  assert.deepEqual(Export.buildEntryList(plan), [
-    { path: '妄想老師/manifest.json', kind: 'manifest' },
-    { path: '妄想老師/cover.jpg', kind: 'cover', md5: 'aaa' },
-    { path: '妄想老師/01 妄想老師 第01卷.epub', kind: 'volume', md5: 'aaa' },
-    { path: '妄想老師/02 妄想老師 第02卷.epub', kind: 'volume', md5: 'bbb' },
-    { path: '妄想老師/MISSING.txt', kind: 'missing' }
-  ]);
 });
 
 test('classifies the site messages seen while topping up the cache', () => {

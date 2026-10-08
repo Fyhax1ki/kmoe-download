@@ -328,20 +328,13 @@
           var record = request.result;
           if (!record) return;
           var fileBlob = record.file_blob || null;
-          var coverBlob = record.cover_blob || null;
           result[md5] = {
             file_md5: record.file_md5 || md5,
             vol_name: record.vol_name || '',
             vol_series: record.vol_series || '',
-            vol_author: record.vol_author || '',
-            vol_language: record.vol_language || '',
             file_type: record.file_type || '',
-            islocal: record.islocal,
             fileSize: fileBlob && typeof fileBlob.size === 'number' ? fileBlob.size : 0,
-            hasCover: !!(coverBlob && coverBlob.size > 0),
-            coverType: coverBlob && coverBlob.type ? coverBlob.type : '',
-            _fileBlob: fileBlob,
-            _coverBlob: coverBlob
+            _fileBlob: fileBlob
           };
         };
       });
@@ -362,39 +355,10 @@
     });
   }
 
-  function exportMeta() {
-    return {
-      exportedAt: new Date().toISOString(),
-      pageUrl: window.location.href,
-      pageTitle: document.title,
-      site: window.location.host
-    };
-  }
-
-  function jsonBlob(value) {
-    return new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
-  }
-
-  function textBlob(text) {
-    return new Blob([text], { type: 'text/plain;charset=utf-8' });
-  }
-
+  // 压缩包里只写漫画源文件：<系列名>/NN <卷名>.epub，不写 manifest / 封面 /
+  // 缺失报告。缺失只会在面板上报，不会变成文件。
   function buildZipEntries(plan, records) {
-    var meta = exportMeta();
-    var entries = [{
-      name: plan.seriesDir + '/' + plan.manifestFilename,
-      blob: jsonBlob(Export.buildManifest(plan, meta))
-    }];
-
-    if (plan.cover) {
-      var coverRecord = records[plan.cover.md5];
-      if (coverRecord && coverRecord._coverBlob) {
-        entries.push({
-          name: plan.seriesDir + '/' + plan.cover.filename,
-          blob: coverRecord._coverBlob
-        });
-      }
-    }
+    var entries = [];
 
     plan.items.forEach(function (item) {
       var record = records[item.md5];
@@ -403,11 +367,6 @@
         name: plan.seriesDir + '/' + item.filename,
         blob: record._fileBlob
       });
-    });
-
-    entries.push({
-      name: plan.seriesDir + '/' + plan.missingFilename,
-      blob: textBlob(Export.buildMissingReport(plan, meta))
     });
 
     return entries;
@@ -708,10 +667,12 @@
 
     if (seriesEl) seriesEl.textContent = plan.series || plan.seriesDir;
     if (statsEl) {
-      statsEl.textContent = '总卷数 ' + plan.listedCount +
-        ' · 已缓存 ' + plan.exportedCount +
-        ' · 未缓存 ' + plan.missingCount +
-        ' · 缓存体积 ' + plan.totalSize;
+      var stats = ['总卷数 ' + plan.listedCount,
+        '已缓存 EPUB ' + plan.exportedCount,
+        '未缓存 ' + plan.missingCount];
+      if (plan.skippedCount) stats.push('非 EPUB ' + plan.skippedCount);
+      stats.push('导出体积 ' + plan.totalSize);
+      statsEl.textContent = stats.join(' · ');
     }
     if (sourceEl) sourceEl.textContent = '只读取浏览器缓存，导出过程不联网' + (plan.scopeLabel ? ' · ' + plan.scopeLabel : '');
 
@@ -733,6 +694,13 @@
         row.appendChild(el('span', 'kmoe-ec-item-size', Export.formatBytes(item.sizeBytes)));
         listEl.appendChild(row);
       });
+      (plan.skipped || []).forEach(function (entry) {
+        var row = el('div', 'kmoe-ec-item kmoe-ec-item-skipped');
+        row.appendChild(el('span', 'kmoe-ec-item-flag', '非 EPUB'));
+        row.appendChild(el('span', 'kmoe-ec-item-name', entry.label + ' ' + entry.name + '（' + entry.ext + '）'));
+        row.appendChild(el('span', 'kmoe-ec-item-size', '跳过'));
+        listEl.appendChild(row);
+      });
       plan.missing.forEach(function (entry) {
         var row = el('div', 'kmoe-ec-item kmoe-ec-item-missing');
         row.appendChild(el('span', 'kmoe-ec-item-flag', '未缓存'));
@@ -740,7 +708,7 @@
         row.appendChild(el('span', 'kmoe-ec-item-size', '未缓存'));
         listEl.appendChild(row);
       });
-      if (!plan.items.length && !plan.missing.length) {
+      if (!plan.items.length && !plan.missing.length && !(plan.skipped || []).length) {
         listEl.appendChild(el('div', 'kmoe-ec-empty', '未检测到卷列表，请先打开一个系列'));
       }
     }

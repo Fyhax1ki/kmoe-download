@@ -4,16 +4,18 @@
   // Pure, side-effect free helpers for the "导出漫画" feature of the koobone.com
   // reader. Everything here works on plain data so it can be unit tested and so
   // the content script stays a thin shell around it.
+  //
+  // 导出只保留漫画源文件：只有 EPUB 会进入压缩包，manifest / 封面 / 缺失报告
+  // 这些附加产物都已移除（缺失信息只在面板上提示）。
   var VOL_ONCLICK_RE = /vol_open\(\s*'((?:[^'\\]|\\.)*)'\s*,\s*'((?:[^'\\]|\\.)*)'\s*\)/;
   var RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
   var MAX_SEGMENT_LENGTH = 80;
   var MAX_FILENAME_LENGTH = 120;
-  var MANIFEST_FILENAME = 'manifest.json';
-  var MISSING_FILENAME = 'MISSING.txt';
   var FALLBACK_SERIES_DIR = 'manga-export';
   var UNKNOWN_SERIES = '未知系列';
   var SERIES_SEPARATOR = ' - ';
-  var GENERATOR = 'Kmoe Download · 导出漫画';
+  // 导出只保留漫画源文件本身：只有真正的 EPUB 才会进入压缩包。
+  var EXPORT_EXTENSION = 'epub';
 
   var EXTENSION_ALIASES = {
     '1': 'mobi',
@@ -24,15 +26,6 @@
     'application/zip': 'zip',
     'application/x-mobipocket-ebook': 'mobi',
     'application/x-zip-compressed': 'zip'
-  };
-
-  var COVER_EXTENSIONS = {    'image/jpeg': 'jpg',
-    'image/jpg': 'jpg',
-    'image/png': 'png',
-    'image/webp': 'webp',
-    'image/gif': 'gif',
-    'image/bmp': 'bmp',
-    'image/avif': 'avif'
   };
 
   function normalizeText(value) {
@@ -90,11 +83,6 @@
     if (raw.indexOf('zip') !== -1) return 'zip';
     if (/^[a-z0-9]{1,5}$/.test(raw)) return raw;
     return 'epub';
-  }
-
-  function coverExtension(mime) {
-    var key = normalizeText(mime).toLowerCase();
-    return COVER_EXTENSIONS[key] || 'jpg';
   }
 
   function padNumber(value, width) {
@@ -364,6 +352,7 @@
     var width = Math.max(2, String(Math.max(resolved.length, totalHint || 0)).length);
     var items = [];
     var missing = [];
+    var skipped = [];
     var totalBytes = 0;
 
     sorting.entries.forEach(function (entry, position) {
@@ -387,6 +376,21 @@
       var sizeBytes = toFiniteNumber(record.fileSize) || toFiniteNumber(record.file_blob_size) || entry.pageSize;
       var series = normalizeText(record.vol_series) || seriesHint;
 
+      // 「只保存 EPUB 源文件」：缓存里的其它格式不进压缩包，也不做任何转换。
+      if (ext !== EXPORT_EXTENSION) {
+        skipped.push({
+          order: order,
+          label: label,
+          listedOrder: entry.listedOrder,
+          md5: entry.md5,
+          name: entry.name,
+          ext: ext,
+          fileType: fileType,
+          sizeBytes: sizeBytes
+        });
+        return;
+      }
+
       totalBytes += sizeBytes;
       items.push({
         order: order,
@@ -396,30 +400,12 @@
         name: entry.name,
         filename: buildVolumeFilename(order, width, series, entry.name, ext),
         ext: ext,
-        fileType: fileType,
-        author: normalizeText(record.vol_author),
-        language: normalizeText(record.vol_language),
-        series: normalizeText(record.vol_series),
-        local: parseInt(record.islocal, 10) === 1,
-        sizeBytes: sizeBytes,
-        hasCover: !!record.hasCover,
-        coverExt: coverExtension(record.coverType)
+        sizeBytes: sizeBytes
       });
     });
 
     var resolvedSeries = seriesHint || seriesNames[0] || '';
     var seriesDir = sanitizeSegment(resolvedSeries, fallbackSeriesDir);
-
-    var cover = null;
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].hasCover) {
-        cover = {
-          filename: 'cover.' + items[i].coverExt,
-          md5: items[i].md5
-        };
-        break;
-      }
-    }
 
     var notes = [];
     if (!seriesHint && seriesNames.length === 1) {
@@ -436,6 +422,14 @@
     if (missing.length) {
       notes.push('缺失卷在浏览器缓存中不存在；导出过程不会联网下载，请先在阅读器中打开这些卷再重新导出。');
     }
+    if (skipped.length) {
+      var skippedExts = [];
+      skipped.forEach(function (entry) {
+        if (skippedExts.indexOf(entry.ext) === -1) skippedExts.push(entry.ext);
+      });
+      notes.push('缓存中有 ' + skipped.length + ' 卷不是 EPUB（' + skippedExts.join('、') +
+        '），按「只保存 EPUB 源文件」跳过，未写入压缩包。');
+    }
 
     return {
       series: resolvedSeries,
@@ -443,13 +437,12 @@
       listedCount: ordered.length,
       items: items,
       missing: missing,
+      skipped: skipped,
       exportedCount: items.length,
       missingCount: missing.length,
+      skippedCount: skipped.length,
       totalBytes: totalBytes,
       totalSize: formatBytes(totalBytes),
-      cover: cover,
-      manifestFilename: MANIFEST_FILENAME,
-      missingFilename: MISSING_FILENAME,
       totalHint: totalHint,
       listComplete: listComplete,
       orderedBy: sorting.orderedBy,
@@ -459,112 +452,7 @@
     };
   }
 
-  function buildManifest(plan, meta) {
-    meta = meta || {};
-    return {
-      generator: GENERATOR,
-      manifestVersion: 1,
-      exportedAt: meta.exportedAt || new Date().toISOString(),
-      source: {
-        site: meta.site || '',
-        pageUrl: meta.pageUrl || '',
-        pageTitle: meta.pageTitle || ''
-      },
-      series: plan.series,
-      directory: plan.seriesDir,
-      orderedBy: plan.orderedBy,
-      stats: {
-        listed: plan.listedCount,
-        exported: plan.exportedCount,
-        missing: plan.missingCount,
-        totalBytes: plan.totalBytes,
-        totalSize: plan.totalSize
-      },
-      volumes: plan.items.map(function (item) {
-        return {
-          order: item.order,
-          label: item.label,
-          listedOrder: item.listedOrder,
-          md5: item.md5,
-          name: item.name,
-          filename: item.filename,
-          author: item.author,
-          language: item.language,
-          fileType: item.fileType || item.ext,
-          sizeBytes: item.sizeBytes,
-          size: formatBytes(item.sizeBytes),
-          importedLocally: item.local
-        };
-      }),
-      missing: plan.missing.map(function (entry) {
-        return {
-          order: entry.order,
-          label: entry.label,
-          listedOrder: entry.listedOrder,
-          md5: entry.md5,
-          name: entry.name
-        };
-      }),
-      notes: plan.notes.slice()
-    };
-  }
-
-  function buildMissingReport(plan, meta) {
-    meta = meta || {};
-    var lines = [];
-    var title = plan.series || plan.seriesDir;
-
-    lines.push('系列：' + title);
-    lines.push('导出时间：' + (meta.exportedAt || new Date().toISOString()));
-    lines.push('导出目录：' + plan.seriesDir + '/');
-    if (meta.pageUrl) lines.push('来源页面：' + meta.pageUrl);
-    lines.push('');
-
-    lines.push('已导出 ' + plan.exportedCount + ' 卷（直接取自浏览器缓存，未重新下载）：');
-    if (plan.exportedCount === 0) {
-      lines.push('  （无）');
-    } else {
-      plan.items.forEach(function (item) {
-        lines.push('  ' + item.filename + '  [' + formatBytes(item.sizeBytes) + ']');
-      });
-    }
-    lines.push('');
-
-    lines.push('缓存中缺失 ' + plan.missingCount + ' 卷：');
-    if (plan.missingCount === 0) {
-      lines.push('  （无，当前列表已全部导出）');
-    } else {
-      plan.missing.forEach(function (entry) {
-        lines.push('  ' + entry.label + ' ' + entry.name + '  (file_md5: ' + entry.md5 + ')');
-      });
-    }
-    lines.push('');
-
-    if (plan.notes.length) {
-      lines.push('说明：');
-      plan.notes.forEach(function (note) {
-        lines.push('  - ' + note);
-      });
-    }
-
-    return lines.join('\r\n') + '\r\n';
-  }
-
-  function buildEntryList(plan) {
-    var entries = [{ path: plan.seriesDir + '/' + plan.manifestFilename, kind: 'manifest' }];
-    if (plan.cover) {
-      entries.push({ path: plan.seriesDir + '/' + plan.cover.filename, kind: 'cover', md5: plan.cover.md5 });
-    }
-    plan.items.forEach(function (item) {
-      entries.push({ path: plan.seriesDir + '/' + item.filename, kind: 'volume', md5: item.md5 });
-    });
-    entries.push({ path: plan.seriesDir + '/' + plan.missingFilename, kind: 'missing' });
-    return entries;
-  }
-
   var api = {
-    MANIFEST_FILENAME: MANIFEST_FILENAME,
-    MISSING_FILENAME: MISSING_FILENAME,
     FALLBACK_SERIES_DIR: FALLBACK_SERIES_DIR,
     MAX_SEGMENT_LENGTH: MAX_SEGMENT_LENGTH,
     MAX_FILENAME_LENGTH: MAX_FILENAME_LENGTH,
@@ -573,7 +461,6 @@
     parseVolumeOnclick: parseVolumeOnclick,
     sanitizeSegment: sanitizeSegment,
     normalizeExtension: normalizeExtension,
-    coverExtension: coverExtension,
     padNumber: padNumber,
     formatBytes: formatBytes,
     isTransientCacheMessage: isTransientCacheMessage,
@@ -583,10 +470,7 @@
     extractVolumeOrdinal: extractVolumeOrdinal,
     splitSeriesPrefix: splitSeriesPrefix,
     groupVolumesBySeries: groupVolumesBySeries,
-    buildExportPlan: buildExportPlan,
-    buildManifest: buildManifest,
-    buildMissingReport: buildMissingReport,
-    buildEntryList: buildEntryList
+    buildExportPlan: buildExportPlan
   };
 
   root.KmoeReaderExport = api;
