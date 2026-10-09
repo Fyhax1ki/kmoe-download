@@ -364,6 +364,17 @@
     return el;
   }
 
+  function findById(node, id) {
+    if (!node) return null;
+    if (node.id === id) return node;
+    var children = node.children || [];
+    for (var i = 0; i < children.length; i++) {
+      var found = findById(children[i], id);
+      if (found) return found;
+    }
+    return null;
+  }
+
   function setSafeImageSrc(img, src) {
     var value = String(src || '').trim();
     if (/^https?:/i.test(value) || /^data:image\/(?:png|gif|jpe?g|webp);/i.test(value)) {
@@ -1041,11 +1052,13 @@
     var card = document.getElementById('kmoe-download-card');
     if (!card) return [];
     var checkboxes = card.querySelectorAll('.kmoe-chapter-checkbox:checked');
-    return Array.from(checkboxes).map(function (cb) {
-      return {
-        index: parseInt(cb.dataset.index)
-      };
-    });
+    var selected = [];
+    for (var i = 0; i < checkboxes.length; i++) {
+      selected.push({
+        index: parseInt(checkboxes[i].dataset.index, 10)
+      });
+    }
+    return selected;
   }
 
   function sanitizeFilename(name) {
@@ -1251,6 +1264,9 @@
   var downloadDelay = 1500;
   var maxRetry = 5;
   var downloadMode = 'aria2';
+  var configuredDownloadMode = 'aria2';
+  var configuredMaxDownloadByMode = { aria2: 1, xhr: 1 };
+  var aria2FallbackNotice = '';
   var downloadCancelled = false;
   var activeXhrs = new Set();
   var activeAria2Downloads = {};
@@ -1269,13 +1285,35 @@
     return limit;
   }
 
+  function applyDownloadSettings(settings) {
+    settings = Settings.normalizeSettings(settings);
+    configuredDownloadMode = Settings.normalizeDownloadMode(settings.downloadMode);
+    configuredMaxDownloadByMode = Settings.normalizeMaxDownloadByMode(settings);
+    downloadMode = configuredDownloadMode;
+    maxDownload = configuredMaxDownloadByMode[downloadMode];
+    downloadDelay = settings.downloadDelay || 1500;
+    maxRetry = settings.maxRetry || 5;
+    preferredDownloadFormat = normalizeDownloadFormat(settings.downloadFormat);
+    aria2FallbackNotice = '';
+  }
+
   function loadSettings() {
-    Settings.loadSettings(function (settings) {
-      downloadMode = Settings.normalizeDownloadMode(settings.downloadMode);
-      maxDownload = getSettingsMaxDownload(settings, downloadMode);
-      downloadDelay = settings.downloadDelay || 1500;
-      maxRetry = settings.maxRetry || 5;
-      preferredDownloadFormat = normalizeDownloadFormat(settings.downloadFormat);
+    Settings.loadSettings(applyDownloadSettings);
+  }
+
+  function useDirectDownloadFallback(reason) {
+    downloadMode = 'xhr';
+    maxDownload = configuredMaxDownloadByMode.xhr;
+    aria2FallbackNotice = '已切换为直接下载：' + formatFailureReason(reason || 'aria2 不可用');
+  }
+
+  function probeAria2(callback) {
+    chrome.runtime.sendMessage({
+      type: 'KMOE_ARIA2_TEST',
+      payload: {}
+    }, function (response) {
+      var err = chrome.runtime.lastError;
+      callback(!err && response && response.ok);
     });
   }
 
@@ -1284,26 +1322,36 @@
 
     progressPanel = document.createElement('div');
     progressPanel.id = 'kmoe-progress-panel';
-    progressPanel.innerHTML =
-      '<div class="kmoe-progress-header">' +
-      '<span>下载进度</span>' +
-      '<div class="kmoe-progress-actions">' +
-      '<button class="kmoe-progress-cancel" id="kmoe-cancel-download">取消</button>' +
-      '<button class="kmoe-progress-close">&times;</button>' +
-      '</div>' +
-      '</div>' +
-      '<div class="kmoe-progress-body" id="kmoe-progress-body"></div>' +
-      '<div class="kmoe-progress-footer">' +
-      '<span id="kmoe-progress-stats">等待: 0 | 完成: 0 | 失败: 0</span>' +
-      '</div>';
+
+    var header = document.createElement('div');
+    header.className = 'kmoe-progress-header';
+    appendTextElement(header, 'span', '', '下载进度');
+    var actions = document.createElement('div');
+    actions.className = 'kmoe-progress-actions';
+    var cancelBtn = appendTextElement(actions, 'button', 'kmoe-progress-cancel', '取消');
+    cancelBtn.id = 'kmoe-cancel-download';
+    var closeBtn = appendTextElement(actions, 'button', 'kmoe-progress-close', '\u00d7');
+    header.appendChild(actions);
+
+    var body = document.createElement('div');
+    body.className = 'kmoe-progress-body';
+    body.id = 'kmoe-progress-body';
+
+    var footer = document.createElement('div');
+    footer.className = 'kmoe-progress-footer';
+    var stats = appendTextElement(footer, 'span', '', '等待: 0 | 完成: 0 | 失败: 0');
+    stats.id = 'kmoe-progress-stats';
+
+    progressPanel.appendChild(header);
+    progressPanel.appendChild(body);
+    progressPanel.appendChild(footer);
     document.body.appendChild(progressPanel);
 
-    progressPanel.querySelector('.kmoe-progress-close').addEventListener('click', function () {
+    closeBtn.addEventListener('click', function () {
       progressPanel.style.display = 'none';
     });
-    makePanelDraggable(progressPanel, progressPanel.querySelector('.kmoe-progress-header'));
-
-    progressPanel.querySelector('#kmoe-cancel-download').addEventListener('click', function () {
+    makePanelDraggable(progressPanel, header);
+    cancelBtn.addEventListener('click', function () {
       cancelDownload();
     });
 
@@ -1341,7 +1389,7 @@
     downloading = 0;
     updateProgressPanel();
 
-    var statsEl = document.getElementById('kmoe-progress-stats');
+    var statsEl = findById(progressPanel, 'kmoe-progress-stats');
     if (statsEl) {
       statsEl.textContent = '已取消';
     }
@@ -1362,12 +1410,13 @@
       else if (item.status === 3) numFail++;
     });
 
-    var statsEl = document.getElementById('kmoe-progress-stats');
+    var statsEl = findById(progressPanel, 'kmoe-progress-stats');
     if (statsEl) {
-      statsEl.textContent = '等待: ' + numQueued + ' | 下载中: ' + numDownloading + '/' + getEffectiveMaxDownload() + ' | 完成: ' + numSuccess + ' | 失败: ' + numFail;
+      var statsText = '等待: ' + numQueued + ' | 下载中: ' + numDownloading + '/' + getEffectiveMaxDownload() + ' | 完成: ' + numSuccess + ' | 失败: ' + numFail;
+      statsEl.textContent = aria2FallbackNotice ? aria2FallbackNotice + ' | ' + statsText : statsText;
     }
 
-    var bodyEl = document.getElementById('kmoe-progress-body');
+    var bodyEl = findById(progressPanel, 'kmoe-progress-body');
     if (bodyEl) {
       clearChildren(bodyEl);
       downloadQueue.forEach(function (item, index) {
@@ -1758,9 +1807,28 @@
 
     createProgressPanel();
     progressPanel.style.display = 'block';
-    downloadMode = Settings.normalizeDownloadMode(downloadMode);
-    downloadRefresh();
-    hideCard();
+    downloadMode = configuredDownloadMode;
+    maxDownload = configuredMaxDownloadByMode[downloadMode];
+    aria2FallbackNotice = '';
+
+    function beginQueue() {
+      if (downloadCancelled) return;
+      downloadRefresh();
+      hideCard();
+    }
+
+    if (downloadMode !== 'aria2') {
+      beginQueue();
+      return;
+    }
+
+    probeAria2(function (available) {
+      if (downloadCancelled) return;
+      if (!available) {
+        useDirectDownloadFallback('aria2 不可用');
+      }
+      beginQueue();
+    });
   }
 
   function showCard() {
@@ -1797,12 +1865,16 @@
     if (areaName === 'local' && changes.kmoe_settings) {
       var settings = changes.kmoe_settings.newValue || {};
 
-      settings = Settings.normalizeSettings(settings);
-      downloadMode = Settings.normalizeDownloadMode(settings.downloadMode);
-      maxDownload = getSettingsMaxDownload(settings, downloadMode);
-      downloadDelay = settings.downloadDelay || 1500;
-      maxRetry = settings.maxRetry || 5;
-      preferredDownloadFormat = normalizeDownloadFormat(settings.downloadFormat);
+      var queueInProgress = downloading > 0 || downloadQueue.length > 0;
+      var activeMode = downloadMode;
+      var activeMaxDownload = maxDownload;
+      var activeNotice = aria2FallbackNotice;
+      applyDownloadSettings(settings);
+      if (queueInProgress) {
+        downloadMode = activeMode;
+        maxDownload = activeMaxDownload;
+        aria2FallbackNotice = activeNotice;
+      }
 
       console.log('Kmoe 设置已热更新:', settings);
     }
@@ -1821,13 +1893,33 @@
       setQueue: function (items) { downloadQueue = items; },
       getQueue: function () { return downloadQueue; },
       setOptions: function (options) {
-        maxDownload = options.maxDownload;
+        var mode = Settings.normalizeDownloadMode(options.downloadMode);
+        configuredDownloadMode = mode;
+        if (options.maxDownloadByMode) {
+          configuredMaxDownloadByMode = Settings.normalizeMaxDownloadByMode({
+            maxDownloadByMode: options.maxDownloadByMode,
+            maxDownload: options.maxDownload
+          });
+        } else {
+          configuredMaxDownloadByMode[mode] = options.maxDownload;
+        }
+        maxDownload = configuredMaxDownloadByMode[mode];
         downloadDelay = options.downloadDelay || 0;
         maxRetry = options.maxRetry || 0;
-        downloadMode = Settings.normalizeDownloadMode(options.downloadMode);
+        downloadMode = mode;
+        aria2FallbackNotice = '';
         downloadCancelled = false;
         downloading = 0;
       },
+      useDirectDownloadFallback: useDirectDownloadFallback,
+      getDownloadState: function () {
+        return {
+          downloadMode: downloadMode,
+          maxDownload: maxDownload,
+          aria2FallbackNotice: aria2FallbackNotice
+        };
+      },
+      startDownload: startDownload,
       downloadRefresh: downloadRefresh,
       validateDownloadQuota: validateDownloadQuota,
       getQuotaDisplayText: getQuotaDisplayText,

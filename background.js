@@ -51,7 +51,11 @@
     }).then(function (result) {
       callback(null, result);
     }).catch(function (err) {
-      callback(err);
+      var message = err && err.message ? err.message : 'aria2 不可用';
+      if (/failed to fetch|network|econnrefused|connection refused/i.test(message)) {
+        message = 'aria2 不可用';
+      }
+      callback(new Error(message));
     });
   }
 
@@ -215,14 +219,22 @@
 
   function handleAria2Test(message, sendResponse) {
     var payload = message.payload || {};
-    var aria2 = Settings.normalizeAria2(payload.aria2);
-    aria2Rpc(aria2, 'aria2.getVersion', [], function (err, result) {
-      if (err) {
-        sendResponse({ ok: false, error: err.message });
-        return;
-      }
-      sendResponse({ ok: true, version: result && result.version ? result.version : 'unknown' });
-    });
+    function runTest(aria2) {
+      aria2Rpc(aria2, 'aria2.getVersion', [], function (err, result) {
+        if (err) {
+          sendResponse({ ok: false, error: err.message });
+          return;
+        }
+        sendResponse({ ok: true, version: result && result.version ? result.version : 'unknown' });
+      });
+    }
+
+    if (payload.aria2) {
+      runTest(Settings.normalizeAria2(payload.aria2));
+      return;
+    }
+
+    loadAria2Settings(runTest);
   }
 
   chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {

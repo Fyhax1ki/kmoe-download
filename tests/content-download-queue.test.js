@@ -121,6 +121,12 @@ function createContentContext() {
             callback({ ok: true, status: { status: 'complete', totalLength: '100', completedLength: '100', downloadSpeed: '0' } });
             return;
           }
+          if (message.type === 'KMOE_ARIA2_TEST' && callback) {
+            callback(context.__aria2Available === false
+              ? { ok: false, error: 'aria2 不可用' }
+              : { ok: true, version: 'test' });
+            return;
+          }
           if (callback) callback({ ok: true });
         }
       },
@@ -137,7 +143,8 @@ function createContentContext() {
       }
     },
     __requests: requests,
-    __runtimeMessages: runtimeMessages
+    __runtimeMessages: runtimeMessages,
+    __aria2Available: true
   };
   context.window.window = context.window;
   context.globalThis = context;
@@ -218,6 +225,53 @@ test('aria2 queue submits resolved items through aria2 RPC message', () => {
   assert.equal(context.__runtimeMessages[0].type, 'KMOE_ARIA2_ADD_URI');
   assert.equal(context.__runtimeMessages[0].payload.filename, 'v1.mobi');
   assert.equal(context.__runtimeMessages[0].payload.url, 'https://example.test/v1.mobi');
+});
+
+test('unavailable aria2 falls back to direct download for the current queue only', () => {
+  const context = createContentContext();
+  context.__aria2Available = false;
+  context.document.body.appendChild = function () {};
+  loadContentScript(context);
+
+  const card = {
+    style: {},
+    querySelector(selector) {
+      return selector === '#kmoe-format' ? { value: '1' } : null;
+    },
+    querySelectorAll(selector) {
+      if (selector === '.kmoe-chapter-checkbox:checked') {
+        return [{ dataset: { index: '0' } }];
+      }
+      return [];
+    }
+  };
+  context.document.getElementById = function (id) {
+    if (id === 'kmoe-download-card') return card;
+    return null;
+  };
+
+  const hooks = context.window.__kmoeTestHooks;
+  hooks.setOptions({
+    maxDownload: 4,
+    maxDownloadByMode: { aria2: 4, xhr: 2 },
+    downloadDelay: 0,
+    maxRetry: 0,
+    downloadMode: 'aria2'
+  });
+
+  hooks.startDownload({
+    bookId: '123',
+    title: 'Book',
+    arr: [{ id: 'v1', name: '卷一' }]
+  });
+
+  assert.equal(context.__runtimeMessages.some((message) => message.type === 'KMOE_ARIA2_TEST'), true);
+  assert.equal(hooks.getDownloadState().downloadMode, 'xhr');
+  assert.equal(hooks.getDownloadState().maxDownload, 2);
+  assert.match(hooks.getDownloadState().aria2FallbackNotice, /直接下载/);
+  assert.equal(context.__requests.length, 1);
+  assert.match(context.__requests[0].url, /v=v1/);
+  assert.equal(context.__runtimeMessages.some((message) => message.type === 'KMOE_ARIA2_ADD_URI'), false);
 });
 
 test('quota display uses GB when quota is at least one GB', () => {
