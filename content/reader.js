@@ -355,7 +355,7 @@
     });
   }
 
-  // 压缩包里只写漫画源文件：<系列名>/NN <卷名>.epub，不写 manifest / 封面 /
+  // 压缩包里只写漫画源文件：<系列名>/<卷名>.epub，不写 manifest / 封面 /
   // 缺失报告。缺失只会在面板上报，不会变成文件。
   function buildZipEntries(plan, records) {
     var entries = [];

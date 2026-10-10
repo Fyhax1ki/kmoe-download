@@ -110,13 +110,15 @@
     }
 
     var suffix = '.' + ext;
-    var room = MAX_FILENAME_LENGTH - label.length - 1 - suffix.length;
+    // 文件名直接使用卷名，不再带前导序号：卷名本身通常已含卷号（如「卷01」），
+    // 前导「01 」会造成多余的双重编号。
+    var room = MAX_FILENAME_LENGTH - suffix.length;
     var safe = sanitizeSegment(base, 'vol-' + label);
     if (safe.length > room && room > 8) {
       safe = safe.slice(0, room).replace(/[\uD800-\uDBFF]$/, '').replace(/[.\s]+$/, '');
     }
 
-    return label + ' ' + safe + suffix;
+    return safe + suffix;
   }
 
   // 站点把卷名渲染成「<系列> - <卷>」。缓存记录里的 vol_series 是权威值，

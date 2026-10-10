@@ -86,12 +86,12 @@ test('pads volume numbers and formats sizes', () => {
 test('builds the series directory, volume filenames and the series prefix', () => {
   assert.equal(
     Export.buildVolumeFilename(1, 2, '妄想老師', '第01卷', 'epub'),
-    '01 妄想老師 第01卷.epub'
+    '妄想老師 第01卷.epub'
   );
   // The series name is not duplicated when it is already part of the volume name.
   assert.equal(
     Export.buildVolumeFilename(2, 2, '妄想老師', '妄想老師 第02卷', 'epub'),
-    '02 妄想老師 第02卷.epub'
+    '妄想老師 第02卷.epub'
   );
   const long = Export.buildVolumeFilename(1, 1, 'S', 'x'.repeat(400), 'epub');
   assert.ok(long.length <= Export.MAX_FILENAME_LENGTH, long.length + ' <= ' + Export.MAX_FILENAME_LENGTH);
@@ -121,8 +121,8 @@ test('separates cached volumes from missing ones while keeping list order', () =
   assert.equal(plan.totalSize, '3.0 KiB');
 
   assert.deepEqual(plan.items.map((item) => item.filename), [
-    '01 妄想老師 第01卷.epub',
-    '03 妄想老師 第03卷.epub'
+    '妄想老師 第01卷.epub',
+    '妄想老師 第03卷.epub'
   ]);
   assert.deepEqual(plan.missing.map((entry) => entry.label + ' ' + entry.name), ['02 第02卷']);
   assert.equal(plan.missing[0].md5, 'bbb');
@@ -187,10 +187,10 @@ test('deduplicates repeated md5 entries and keeps same-named volumes distinct', 
     }
   });
 
-  // The same md5 listed twice is a single volume; the order prefix keeps
-  // identical volume names apart on disk.
+  // The same md5 listed twice is a single volume. Export filenames follow the
+  // volume name only (no leading sequence number).
   assert.equal(plan.listedCount, 2);
-  assert.deepEqual(plan.items.map((item) => item.filename), ['01 S same.epub', '02 S same.epub']);
+  assert.deepEqual(plan.items.map((item) => item.filename), ['S same.epub', 'S same.epub']);
 });
 
 test('exports only EPUB source files and skips other cached formats', () => {
@@ -208,7 +208,7 @@ test('exports only EPUB source files and skips other cached formats', () => {
     }
   });
 
-  assert.deepEqual(plan.items.map((item) => item.filename), ['01 S 第01卷.epub']);
+  assert.deepEqual(plan.items.map((item) => item.filename), ['S 第01卷.epub']);
   assert.equal(plan.exportedCount, 1);
   assert.equal(plan.skippedCount, 2);
   assert.equal(plan.missingCount, 0);
@@ -249,9 +249,9 @@ test('exports volumes in reading order when the page lists them out of order', (
 
   assert.equal(plan.orderedBy, 'volume-number');
   assert.deepEqual(plan.items.map((item) => item.filename), [
-    '01 花落紅 - 卷01.epub',
-    '02 花落紅 - 卷02.epub',
-    '04 花落紅 - 卷04.epub'
+    '花落紅 - 卷01.epub',
+    '花落紅 - 卷02.epub',
+    '花落紅 - 卷04.epub'
   ]);
   assert.deepEqual(plan.missing.map((entry) => entry.label + ' ' + entry.name), ['03 花落紅 - 卷03']);
   assert.equal(plan.items[0].listedOrder, 1);
@@ -299,7 +299,7 @@ test('numbers volumes with at least two digits', () => {
   const plan = Export.buildExportPlan({ seriesHint: 'S', volumes, cachedByMd5 });
   assert.equal(plan.items[0].label, '01');
   assert.equal(plan.items[11].label, '12');
-  assert.ok(plan.items[11].filename.startsWith('12 '));
+  assert.equal(plan.items[11].filename, 'S 第 12 卷.epub');
 });
 
 test('splits the series prefix the site renders in volume names', () => {
